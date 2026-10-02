@@ -4,8 +4,20 @@ Smart City Complaint Management System.
 Architecture: Non-ML Deterministic Natural Language Processing & Classical IR.
 """
 
+import sys
 import time
+from pathlib import Path
 from contextlib import asynccontextmanager
+
+# Ensure both project root and backend folder are in sys.path
+_current_file = Path(__file__).resolve()
+_project_root = _current_file.parent.parent.parent
+_backend_root = _current_file.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+if str(_backend_root) not in sys.path:
+    sys.path.insert(0, str(_backend_root))
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -46,10 +58,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Configuration
+# CORS Configuration - permit localhost and 127.0.0.1 across all development ports
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

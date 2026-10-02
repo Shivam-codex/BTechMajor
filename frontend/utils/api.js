@@ -3,10 +3,21 @@
  * Direct HTTP calls to FastAPI server running on localhost:8000
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+export function getApiBaseUrl() {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  if (typeof window !== "undefined" && window.location.hostname) {
+    return `http://${window.location.hostname}:8000/api`;
+  }
+  return "http://127.0.0.1:8000/api";
+}
+
+const API_BASE_URL = getApiBaseUrl();
 
 export async function fetchApi(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint}`;
+  const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}${endpoint}`;
   const defaultHeaders = {
     "Accept": "application/json",
   };
@@ -16,13 +27,21 @@ export async function fetchApi(endpoint, options = {}) {
     defaultHeaders["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        ...defaultHeaders,
+        ...options.headers,
+      },
+    });
+  } catch (networkError) {
+    console.error(`[API Network Error] ${url}:`, networkError);
+    throw new Error(
+      `Cannot connect to backend server at ${baseUrl}. Please ensure the FastAPI backend is running on port 8000.`
+    );
+  }
 
   if (!response.ok) {
     let errorDetail = "An unexpected error occurred.";

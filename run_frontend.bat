@@ -2,6 +2,6 @@
 echo ======================================================================
 echo   Starting Smart City Frontend Server (Next.js on Port 3000)
 echo ======================================================================
-cd frontend
+cd /d "%~dp0frontend"
 npm run dev
 pause

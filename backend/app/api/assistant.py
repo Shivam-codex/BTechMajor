@@ -11,10 +11,30 @@ from backend.app.core.security import sanitize_text_input
 router = APIRouter(prefix="/assistant", tags=["Municipal Assistant"])
 
 
+@router.get(
+    "/status",
+    summary="Get status of Non-ML Municipal Assistant",
+)
+def get_assistant_status():
+    """Returns runtime status and indexing health of the Non-ML assistant."""
+    from backend.app.services.retrieval.tfidf_retriever import tfidf_retriever
+    chunks_count = len(tfidf_retriever.chunks) if tfidf_retriever.is_ready() else 0
+    return {
+        "status": "online",
+        "retrieval_engine": "TF-IDF + Cosine Similarity (Non-ML)",
+        "indexed_chunks": chunks_count,
+    }
+
+
 @router.post(
     "/query",
     response_model=AssistantQueryResponse,
     summary="Query the Non-ML Retrieval-Augmented Municipal Assistant",
+)
+@router.post(
+    "/chat",
+    response_model=AssistantQueryResponse,
+    summary="Chat alias for Non-ML Retrieval-Augmented Municipal Assistant",
 )
 def query_assistant(payload: AssistantQueryRequest):
     """
