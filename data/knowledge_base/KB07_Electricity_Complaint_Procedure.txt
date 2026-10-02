@@ -1,0 +1,33 @@
+================================================================================
+DOCUMENT ID: KB-007
+TITLE: Municipal Electricity and Power Supply Grievance Procedure
+CATEGORY: Electricity
+DEPARTMENT: Electrical Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. SCOPE AND JURISDICTION
+This guideline governs electrical safety hazards, municipal distribution feeder issues, transformer failures, dangling overhead cables, and power surges affecting municipal infrastructure, public squares, and community installations.
+
+2. CRITICAL AND HIGH-RISK ELECTRICAL HAZARDS
+- Exposed live electrical wires hanging on roads, footpaths, or near trees.
+- Transformer sparking, smoke emissions, or oil leakage indicating catastrophic failure.
+- Electric shock hazards originating from municipal iron poles, pedestrian railings, or traffic signal posts.
+- Underground cable burning, insulation meltdown, or sudden high-voltage surges damaging appliances.
+- Extended unscheduled power blackouts across entire municipal wards.
+
+3. EMERGENCY LODGING PROTOCOL
+Step 1: If life-threatening conditions (e.g., exposed sparking wire) exist, maintain a 15-meter cordon and call Emergency 1912 / 1800-233-0001 immediately.
+Step 2: Submit a grievance through the portal. The deterministic priority engine will detect Critical priority automatically.
+Step 3: The rapid response electric squad will be dispatched with insulated equipment.
+
+4. RESOLUTION TIMELINES (SLA)
+- Exposed live electric wire / shock hazard: Immediate isolation within 1 hour; permanent fix within 4 hours.
+- Distribution transformer breakdown: 6 to 12 hours.
+- Voltage fluctuation / neutral wire fault: 8 to 16 hours.
+- Cable replacement and overhead wire bunching: 24 to 48 hours.
+
+5. SAFETY ADVISORY
+Never approach fallen electric conductors during rain or waterlogging. Treat all loose wires as energized and live.

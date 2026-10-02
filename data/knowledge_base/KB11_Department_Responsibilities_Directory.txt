@@ -1,0 +1,40 @@
+================================================================================
+DOCUMENT ID: KB-011
+TITLE: Municipal Department Responsibilities Directory
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. DIRECTORY OF MUNICIPAL BODIES AND CORE RESPONSIBILITIES
+
+1. Water Supply Department:
+   - Potable piped drinking water supply, reservoir balancing, pipeline leak repairs.
+   - Water tanker services during emergency shortages, water meter verification.
+
+2. Sanitation Department (Solid Waste Management):
+   - Daily door-to-door domestic waste pickup, segregation monitoring, street sweeping.
+   - Bulk waste collection, commercial garbage dumps clearance, dead animal disposal.
+
+3. Roads and Infrastructure Department:
+   - Road resurfacing, asphalt pothole repairs, culvert bridge maintenance.
+   - Concrete footpaths, pedestrian walkways, speed breakers, road lane markings.
+
+4. Electrical Department:
+   - Public street lights, LED lamps, high-mast lighting, timer switches.
+   - Municipal electric feeder maintenance and electrical pole safety.
+
+5. Drainage Department:
+   - Storm-water lines, underground sewerage networks, manhole covers, nullah de-silting.
+   - Wastewater suction-jetting operations to relieve street and residential flooding.
+
+6. Public Health and Sanitation Department:
+   - Public restrooms, Sulabh Shauchalaya maintenance, anti-mosquito fogging, epidemic control.
+
+7. Traffic Management Department:
+   - Electronic traffic signals, pedestrian crossing signage, coordination on parking rules.
+
+8. General Grievance Cell:
+   - Cross-departmental coordination, citizen assistance, escalation tracking, and unclassified grievances.

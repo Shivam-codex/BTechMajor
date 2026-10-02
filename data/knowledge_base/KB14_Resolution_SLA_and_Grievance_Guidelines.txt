@@ -1,0 +1,31 @@
+================================================================================
+DOCUMENT ID: KB-014
+TITLE: Resolution SLA and Grievance Redressal Charter
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. COMPREHENSIVE SERVICE LEVEL AGREEMENT (SLA) SUMMARY TABLE
+
+Service / Grievance Category                Standard Turnaround Time (SLA)
+--------------------------------------------------------------------------------
+Major Water Pipeline Burst                   6 to 12 Hours
+Low Water Pressure / Supply Failure          24 to 48 Hours
+Dead Animal Removal                          4 Hours
+Overflowing Community Garbage Bin            8 to 12 Hours
+Missed Garbage Vehicle Routine               24 Hours
+Pothole Repair on Arterial Roads             24 to 48 Hours
+Pothole Repair on Internal Colony Streets    3 to 5 Working Days
+Individual Street Lamp Fault                 24 Hours
+Exposed Live Electric Wire / Shock Hazard    1 to 4 Hours (Critical Emergency)
+Missing / Broken Manhole Cover               2 to 4 Hours (Immediate Barricading)
+Sewage Water Overflow / Gutter Choke         12 to 24 Hours
+Public Restroom Deep Clean Needed            4 Hours
+Non-Functional Traffic Signal                2 Hours
+Illegal Parking Gridlock Intervention        3 Hours
+
+2. ACCOUNTABILITY RULES
+Failure to resolve grievances within the designated SLA mandates an automatic system trigger elevating the complaint to higher supervisory authorities without manual citizen prompting.

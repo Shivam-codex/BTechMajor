@@ -1,0 +1,33 @@
+================================================================================
+DOCUMENT ID: KB-008
+TITLE: Traffic and Parking Grievance Redressal Procedure
+CATEGORY: Traffic
+DEPARTMENT: Traffic Management Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. OVERVIEW
+The Traffic Management Department, in close coordination with the City Traffic Police, handles citizen grievances concerning vehicular congestion bottlenecks, non-functional traffic signals, illegal roadside parking, unauthorized hawker encroachments on roads, and safety crossings.
+
+2. COMPLAINT TYPES
+- Non-functional traffic signals or faulty cycle timing causing severe traffic gridlock.
+- Illegal parking of commercial vehicles, trucks, or abandoned scrap cars blocking traffic lanes.
+- Encroachments by roadside stalls or construction debris causing traffic lane bottlenecks.
+- Missing zebra crossings, stop lines, or missing directional signage at major crossroads.
+- Unregulated wrong-side vehicular movement creating severe accident hazards.
+
+3. REPORTING MECHANISM
+Step 1: State the exact intersection name, road stretch, and landmark.
+Step 2: Upload a brief note or picture showing the congestion or malfunctioning signal.
+Step 3: Traffic control division directs technical signal repair teams and field wardens.
+
+4. SERVICE LEVEL AGREEMENTS (SLA)
+- Major traffic signal power failure or amber blinking fault: Within 2 hours.
+- Removal of broken-down vehicle or towing of illegal parking bottleneck: Within 3 hours.
+- Zebra crossing repainting and traffic signage installation: 7 working days.
+- Comprehensive traffic regulation survey for bottleneck spots: 14 working days.
+
+5. SPECIAL HELPLINE
+Traffic emergencies and acute junction blockages can be reported to the Traffic Control Room at 1095 / 020-2612-XXXX.

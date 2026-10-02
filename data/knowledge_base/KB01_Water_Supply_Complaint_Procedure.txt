@@ -1,0 +1,34 @@
+================================================================================
+DOCUMENT ID: KB-001
+TITLE: Water Supply Complaint Procedure
+CATEGORY: Water Supply
+DEPARTMENT: Water Supply Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. OVERVIEW AND SCOPE
+This document outlines standard operational procedures for citizen complaints regarding municipal potable water distribution, pipeline ruptures, water contamination, low water pressure, and unscheduled supply disruptions within city limits.
+
+2. COMMON WATER SUPPLY GRIEVANCES
+- Complete stoppage of piped water supply in residential or commercial zones.
+- Low water pressure preventing overhead tank filling.
+- Pipeline leakage or main line bursts causing potable water loss on roads.
+- Water quality issues including turbidity, yellow/brown coloration, or foul chemical odor.
+- Malfunctioning municipal water meters and irregular supply schedules.
+
+3. HOW CITIZENS CAN REGISTER A COMPLAINT
+Step 1: Note the exact location including Ward Number, landmark, street name, and building/house number.
+Step 2: Submit the complaint through the Smart City Citizen Portal (manual text or by uploading an official letter in PDF/DOCX/TXT format).
+Step 3: Receive an automated tracking ID formatted as CMP-YYYY-XXXXXX.
+Step 4: An inspection engineer from the Water Supply Department will be assigned automatically.
+
+4. RESOLUTION TIME LIMITS (SERVICE LEVEL AGREEMENTS - SLA)
+- Major pipeline burst or main supply interruption: 6 to 12 hours.
+- Low pressure or valve blockage: 24 to 48 hours.
+- Water contamination investigation: Within 12 hours (water testing laboratory sample collection).
+- Defective water meter inspection: 3 to 5 working days.
+
+5. EMERGENCY HOTLINE AND ASSISTANCE
+For catastrophic pipeline bursts flooding public roads, citizens should immediately dial the Central Municipal Emergency Line at 1800-233-0001 (Toll-Free, 24/7) or contact the local Ward Water Distribution Engineer.

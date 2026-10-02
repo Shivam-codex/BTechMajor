@@ -1,0 +1,34 @@
+================================================================================
+DOCUMENT ID: KB-003
+TITLE: Road and Pothole Complaint Procedure
+CATEGORY: Road/Pothole
+DEPARTMENT: Roads and Infrastructure Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. PURPOSE AND SCOPE
+This document outlines citizen rights and procedures for filing grievances concerning damaged road surfaces, deep asphalt potholes, damaged footpaths/pavements, uneven speed breakers, and road cave-ins.
+
+2. GRIEVANCE CATEGORIZATION
+- Potholes and asphalt surface depressions exceeding 50 mm depth.
+- Road cave-ins, trenches dug by utility providers left unpaved or uncovered.
+- Broken pedestrian sidewalks, pedestrian walkways, and damaged concrete curb stones.
+- Illegally constructed, non-standard, or unpainted speed breakers causing vehicle damage.
+- Missing road center dividers or broken pedestrian guard rails.
+
+3. HOW TO SUBMIT A ROAD REPAIR COMPLAINT
+Step 1: Open the Smart City Complaint Portal and select Road/Pothole category or submit document.
+Step 2: Enter specific location parameters (e.g., Road Name, Cross-junction, Direction of traffic lane, Ward).
+Step 3: Specify whether the pothole poses an immediate vehicular accident or two-wheeler skid hazard.
+Step 4: The system will automatically tag priority as High or Critical if hazardous keywords are present.
+
+4. RESOLUTION TIMELINES (SLA)
+- Major pothole on arterial / arterial bus route: 24 to 48 hours (Cold-mix or mastic asphalt filling).
+- Potholes on internal colony roads and residential lanes: 3 to 5 working days.
+- Road cave-in or trench collapse posing life risk: Barricading within 2 hours; restoration within 24 hours.
+- Footpath repair and slab replacement: 7 working days.
+
+5. ESCALATION MECHANISM
+If a pothole complaint remains unaddressed beyond 72 hours on major corridors, the grievance automatically escalates to the Executive Engineer (Roads) and the Ward Deputy Commissioner.

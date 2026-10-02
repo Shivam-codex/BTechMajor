@@ -1,0 +1,34 @@
+================================================================================
+DOCUMENT ID: KB-005
+TITLE: Drainage and Sewerage Complaint Procedure
+CATEGORY: Drainage/Sewerage
+DEPARTMENT: Drainage Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. INTRODUCTION
+The Drainage Department oversees the maintenance of underground sewage lines, storm-water drains, open nullahs, culverts, and manhole safety infrastructure to prevent public health hazards and monsoon waterlogging.
+
+2. TYPES OF DRAINAGE COMPLAINTS
+- Open, broken, or dislodged manhole covers (Severe Public Safety Hazard).
+- Underground sewage pipeline chokes causing wastewater backflow into homes or cellars.
+- Overflowing stormwater drains spilling foul water onto public roads.
+- Blocked natural drainage nullahs leading to localized neighborhood flooding.
+- Excessive mosquito breeding due to stagnant wastewater pools.
+
+3. CITIZEN ACTION STEPS
+Step 1: In case of an open or missing manhole cover, immediately raise a complaint marked Critical.
+Step 2: Provide landmark details (e.g., in front of shop X, near junction Y, Ward Z).
+Step 3: Suction-cum-jetting sewer cleaning machines are deployed by the regional drainage unit.
+Step 4: Real-time resolution notes and verification are recorded upon completion.
+
+4. RESOLUTION TIMELINES (SLA)
+- Missing or broken manhole cover: Within 2 to 4 hours (Immediate Barricading & Replacement).
+- Sewage water backflow into residential premises: Within 12 hours.
+- General drain choke or gutter silt removal: 24 to 48 hours.
+- Nullah de-silting and structural wall repairs: 5 to 7 working days.
+
+5. HEALTH PROTOCOL
+Upon unblocking sanitary sewer lines, municipal sanitation workers are mandated to spray disinfectants and lime powder around the area to neutralize odors and disease vectors.

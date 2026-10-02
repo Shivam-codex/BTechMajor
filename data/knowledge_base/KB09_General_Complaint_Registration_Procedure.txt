@@ -1,0 +1,28 @@
+================================================================================
+DOCUMENT ID: KB-009
+TITLE: General Municipal Complaint Registration Procedure
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. INTRODUCTION TO CITIZEN GRIEVANCE PORTAL
+The Smart City Complaint Management System provides a unified, transparent digital window for citizens to file grievances related to any municipal civic amenity without needing to visit physical municipal corporation offices.
+
+2. SUPPORTED SUBMISSION CHANNELS
+- Direct Online Text Submission: Enter grievance details directly into the web portal.
+- Document Upload: Upload pre-drafted grievance letters, scanned notices, or citizen petitions in PDF, DOCX, or TXT formats (up to 10 MB).
+- Bilingual Grievance Input: The system natively supports English, Marathi (Devanagari script), and code-mixed inputs.
+
+3. LIFECYCLE OF A COMPLAINT
+1. Submission: The citizen submits the grievance and is assigned an immutable tracking ID (CMP-YYYY-XXXXXX).
+2. NLP & Rule Classification: The system pre-processes the grievance and assigns category, priority, and department deterministically.
+3. Department Assignment: Automatically routed to the jurisdictional department engineer or officer.
+4. Investigation & Action (In Progress): Field staff investigate and execute restorative work.
+5. Resolution: The officer logs resolution notes and marks the grievance as 'Resolved'.
+6. Quality Review: Unclassified or complex grievances are placed under 'Needs Review' for administrative intervention.
+
+4. TRACKING YOUR COMPLAINT
+Citizens can track real-time grievance status 24/7 by entering their Complaint ID on the portal dashboard.

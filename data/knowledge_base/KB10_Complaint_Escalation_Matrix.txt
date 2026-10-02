@@ -1,0 +1,28 @@
+================================================================================
+DOCUMENT ID: KB-010
+TITLE: Municipal Complaint Escalation Matrix
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. OBJECTIVE OF THE ESCALATION HIERARCHY
+To ensure accountability, prevent bureaucratic delays, and ensure strict compliance with Citizen Charter SLAs, unresolved complaints are automatically escalated through three supervisory administrative levels.
+
+2. THE THREE-TIER ESCALATION MATRIX
+- Level 1 (Initial Assignment - Day 0 to SLA Expiry):
+  Designated Officer: Junior Engineer (JE) / Sanitary Inspector / Field Supervisor.
+  Responsibility: Site inspection, work order issuance, and physical fault resolution within standard SLA.
+
+- Level 2 (First Escalation - SLA + 24 to 48 Hours Unresolved):
+  Designated Officer: Deputy Executive Engineer (DEE) / Ward Medical Officer of Health.
+  Action: Review reason for delay, reallocate resources or contractor notices, direct intervention.
+
+- Level 3 (Final Escalation - SLA + 72 Hours Unresolved):
+  Designated Officer: Executive Engineer (EE) / Additional Municipal Commissioner (AMC).
+  Action: Disciplinary inquiry, departmental penalty on contractor/engineer, priority resolution mandate.
+
+3. CITIZEN-INITIATED RE-OPENING
+If a complaint is marked 'Resolved' but the physical fault persists on the ground, citizens can re-open the complaint within 7 days by submitting resolution feedback. Re-opened complaints automatically escalate to Level 2.

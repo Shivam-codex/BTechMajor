@@ -1,0 +1,25 @@
+================================================================================
+DOCUMENT ID: KB-013
+TITLE: Complaint Status and Tracking Guide
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. MEANING OF COMPLAINT STATUSES
+Every municipal grievance progresses through defined lifecycle stages:
+
+- 'Submitted': The grievance has been successfully recorded in the database and assigned a unique tracking ID.
+- 'Classified': Deterministic NLP rules have analyzed the grievance, assigned category keywords, and computed the Rule Match Score.
+- 'Assigned': The grievance has been routed to the appropriate department (e.g., Water Supply, Sanitation, Roads) and ward office.
+- 'In Progress': The assigned field engineer or sanitation supervisor has initiated inspection or restorative works.
+- 'Resolved': Remedial actions have been completed, verified on-site, and logged with resolution notes.
+- 'Needs Review': Grievances that did not match predefined rule thresholds or require manual administrative verification.
+- 'Rejected': Duplicate submissions, frivolous grievances, or requests outside municipal jurisdiction.
+
+2. TRACKING INSTRUCTIONS
+1. Visit the portal and navigate to the 'Track Complaint' tab.
+2. Enter your Complaint ID (e.g., CMP-2026-00123).
+3. The tracking interface displays category, priority, department, timestamps, and full rule matching transparency.

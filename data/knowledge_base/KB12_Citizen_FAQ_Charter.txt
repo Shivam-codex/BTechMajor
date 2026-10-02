@@ -1,0 +1,27 @@
+================================================================================
+DOCUMENT ID: KB-012
+TITLE: Citizen Frequently Asked Questions (FAQ) Charter
+CATEGORY: Other
+DEPARTMENT: General Grievance Cell
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+Q1: How do I report a pothole on my street?
+A1: You can submit a complaint via the Citizen Portal with your street name and nearest landmark. You can also upload a photo or document. The system will categorize it under 'Road/Pothole' and route it to the Roads and Infrastructure Department.
+
+Q2: What is the normal turnaround time for pothole repairs?
+A2: Potholes on major arterial corridors are attended to within 24 to 48 hours using quick-setting cold mix. Potholes on internal colony roads are scheduled within 3 to 5 working days.
+
+Q3: Can I file a complaint in Marathi or mixed Marathi-English?
+A3: Yes! The system natively processes English, Marathi in Devanagari script (e.g., 'रस्त्यावर खड्डे आहेत', 'पाणी येत नाही'), and code-mixed inputs without requiring manual translation.
+
+Q4: What should I do if there is an exposed live wire or severe electric sparking?
+A4: An exposed electrical wire is a Critical life-threatening hazard. Immediately stay at a safe distance and call the Emergency Helpline at 1800-233-0001 or submit an emergency complaint. The Electrical Department responds within 1 to 4 hours.
+
+Q5: How can I check the status of my submitted complaint?
+A5: You can use your unique Complaint ID (e.g., CMP-2026-AB12CD) on the portal tracking page to view the current status, assigned engineer, and resolution updates.
+
+Q6: How long does garbage collection resolution take if bins are overflowing?
+A6: Overflowing community garbage bins and missed garbage truck pickups are scheduled for clearance within 8 to 24 hours by the Sanitation Department.

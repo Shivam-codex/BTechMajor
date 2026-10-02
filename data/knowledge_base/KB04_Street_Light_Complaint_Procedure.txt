@@ -1,0 +1,34 @@
+================================================================================
+DOCUMENT ID: KB-004
+TITLE: Street Light Complaint Procedure
+CATEGORY: Street Light
+DEPARTMENT: Electrical Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. POLICY OVERVIEW
+Proper public street lighting is essential for pedestrian safety, women safety at night, and vehicular accident prevention. The Electrical Department manages all municipal LED streetlights, sodium vapor lamps, high-mast towers, and feeder pillars.
+
+2. CLASSIFICATION OF STREET LIGHT FAULTS
+- Dark streets with single or multiple non-functional street lamps.
+- Continuous day-and-night burning lights indicating timer switch or photocell sensor failure.
+- Tilting, rusted, or structurally damaged light poles liable to fall.
+- Flickering fixtures or low lumen illumination in sensitive residential areas.
+- Exposed junction boxes or loose wiring at the base of street lamp posts.
+
+3. REPORTING PROCEDURE
+Step 1: Check the alphanumeric Pole Number stenciled on the lamp pole (e.g., SL-W04-0128).
+Step 2: Submit a complaint via the Citizen Portal with the pole number and street address.
+Step 3: The Electrical Department maintenance van is dispatched based on ward jurisdiction.
+Step 4: Once repaired, the technician submits photographic verification to close the grievance.
+
+4. SERVICE LEVEL AGREEMENTS (SLA)
+- Individual street lamp replacement (LED fixture/choke failure): 24 hours.
+- Circuit failure / entire street blackout (feeder pillar fault): 12 hours.
+- Damaged pole or exposed live wire at pole base: 4 hours (Emergency Priority).
+- High-mast tower repairs: 48 to 72 hours.
+
+5. SPECIAL NIGHT PATROLLING
+Municipal Electrical Squads conduct weekly night surveys across arterial roads to proactively identify dark patches.

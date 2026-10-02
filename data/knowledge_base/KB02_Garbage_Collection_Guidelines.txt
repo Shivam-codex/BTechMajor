@@ -1,0 +1,34 @@
+================================================================================
+DOCUMENT ID: KB-002
+TITLE: Solid Waste and Garbage Collection Guidelines
+CATEGORY: Garbage/Waste Management
+DEPARTMENT: Sanitation Department
+SOURCE: Sample Municipal Knowledge Base – Academic Project
+VERSION: 1.0
+LAST UPDATED: 2026-01-15
+================================================================================
+
+1. OVERVIEW AND OBJECTIVE
+This document details citizen guidelines and complaint processes concerning daily municipal door-to-door waste collection, street sweeping, community dustbin clearance, and eradication of illegal open garbage dumps.
+
+2. TYPES OF SANITATION GRIEVANCES
+- Ghanta Gadi (municipal garbage collection vehicle) not arriving on schedule.
+- Overflowing public community dustbins in residential societies and market centers.
+- Open littering, illegal dumping of commercial or construction debris on roadsides.
+- Dead animal removal and biological waste hazard clearance.
+- Failure of sanitary staff to sweep public roads and lanes.
+
+3. CITIZEN SUBMISSION PROCESS
+Step 1: Citizens can submit a complaint via the Citizen Portal or upload photographic/documentary evidence.
+Step 2: Provide the exact street name, nearest landmark, and ward jurisdiction.
+Step 3: The system assigns the complaint to the Sanitary Inspector of the concerned Prabhag / Ward.
+Step 4: Real-time status can be tracked from 'Submitted' to 'Assigned', 'In Progress', and 'Resolved'.
+
+4. STANDARD RESOLUTION TIMELINES (SLA)
+- Dead animal removal: Within 4 hours (Urgent Health Priority).
+- Overflowing community bin clearance: Within 8 to 12 hours.
+- Missed door-to-door garbage truck collection: Within 24 hours.
+- Clearance of chronic illegal garbage dumps: 24 to 48 hours.
+
+5. PENALTIES FOR ILLEGAL DUMPING
+Dumping mixed unsegregated waste or hazardous industrial debris in open public plots attracts a spot fine ranging from Rs. 500 to Rs. 5,000 under the Municipal Solid Waste Management By-laws.
