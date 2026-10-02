@@ -14,12 +14,16 @@ from backend.app.core.database import Base
 from backend.app.models.complaint import Complaint
 
 
+from sqlalchemy.pool import StaticPool
+
+
 @pytest.fixture(scope="session")
 def test_db_engine():
-    """In-memory SQLite database engine for testing."""
+    """In-memory SQLite database engine for testing with shared StaticPool."""
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
     yield engine
