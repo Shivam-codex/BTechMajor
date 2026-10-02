@@ -17,36 +17,43 @@ CRITICAL_TRIGGERS: List[str] = [
     "hanging wire", "loose wire", "severe flooding", "dangerous", "life threatening",
     "transformer blast", "electrocution risk", "gas leak", "building collapse",
     "fatal", "fire breakout", "cave in", "sparking wire", "open manhole near school",
-    "electric shock", "hospital emergency",
+    "electric shock", "hospital emergency", "pipe burst", "dead animal", "open manhole",
+    "broken manhole", "sparking", "electrocution", "road cave-in", "road cave in",
     # Marathi
     "अपघात", "विजेची उघडी तार", "उघडी तार", "धोकादायक", "पूर", "भिंत कोसळली",
     "जीवघेणा", "ठिणग्या", "शॉर्ट सर्किट", "आग लागली", "रस्ता खचला", "आपत्कालीन",
-    "मॅनहोल उघडे", "करंट लागला",
+    "मॅनहोल उघडे", "करंट लागला", "पाईप फुटला", "मृत प्राणी",
     # Transliteration
-    "accident", "dhokadayak", "apghat", "wire ughadi", "fire",
+    "accident", "dhokadayak", "apghat", "wire ughadi", "fire", "pipe burst",
 ]
 
 HIGH_TRIGGERS: List[str] = [
     # English
-    "completely blocked", "no water for several days", "no water since 3 days",
-    "no water since 4 days", "no water since 5 days", "massive garbage accumulation",
-    "dangerous road", "sewage entering houses", "hospital road", "school gate",
-    "contaminated water causing illness", "main road blocked", "epidemic",
-    "deep crater", "heavy traffic jam", "foul smell entering house",
+    "completely blocked", "no water for several days", "no water since", "days without water",
+    "massive garbage accumulation", "dangerous road", "sewage entering houses", "hospital road",
+    "school gate", "contaminated water causing illness", "main road blocked", "epidemic",
+    "deep crater", "heavy traffic jam", "foul smell entering house", "contaminated",
+    "contamination", "pipeline leakage", "major leak", "gridlock", "traffic jam",
+    "overflowing", "overflow", "dark street", "total darkness", "load shedding",
+    "power cut", "choked", "blocked drain", "foul smell", "water crisis",
     # Marathi
     "रस्ता पूर्ण बंद", "अनेक दिवस पाणी नाही", "पाणी नाही अनेक दिवस", "दुर्गंधी",
     "मोठा खड्डा", "घरात पाणी शिरले", "सांडपाणी घरात", "कचऱ्याचे मोठे ढीग",
     "रुग्णालय रस्ता", "आजारी", "रोगराई", "वाहने आदळली", "वाहतूक ठप्प",
+    "गळती", "वाहतूक कोंडी", "अंधार", "भारनियमन", "तुंबले", "सांडपाणी", "अस्वच्छ",
     # Transliteration
-    "rasta band", "paani nahi", "gatar tumble", "gharala paani",
+    "rasta band", "paani nahi", "gatar tumble", "gharala paani", "traffic jam",
 ]
 
 LOW_TRIGGERS: List[str] = [
     # English
     "inquiry", "information", "suggestion", "minor issue", "cosmetic",
     "procedure query", "general question", "status check", "request for info",
+    "request", "permission", "guidelines", "timing", "schedule", "tree pruning",
+    "pruning", "rebate", "property tax", "tax", "certificate", "birth certificate",
     # Marathi
     "माहिती हवी", "चौकशी", "सूचना", "साधी विचारणा", "नियम काय आहेत",
+    "माहिती", "विनंती", "वेळापत्रक", "दाखला", "सवलत", "फांद्या छाटणी",
 ]
 
 

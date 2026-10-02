@@ -1,0 +1,374 @@
+[
+  {
+    "question": "How do I report a pothole on my street?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure",
+      "Citizen Frequently Asked Questions (FAQ) Charter"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "What is the turnaround time for a major water pipeline burst?",
+    "expected_documents": [
+      "Water Supply Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "How often does the garbage truck visit our neighborhood?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines",
+      "Citizen Frequently Asked Questions (FAQ) Charter"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  },
+  {
+    "question": "What should I do if an electrical wire is sparking on the road?",
+    "expected_documents": [
+      "Municipal Electricity and Power Supply Grievance Procedure",
+      "Citizen Frequently Asked Questions (FAQ) Charter"
+    ],
+    "expected_category": "Electricity"
+  },
+  {
+    "question": "How to file a complaint about an open manhole cover?",
+    "expected_documents": [
+      "Drainage and Sewerage Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Drainage/Sewerage"
+  },
+  {
+    "question": "What are the rules regarding public toilet cleanliness and maintenance?",
+    "expected_documents": [
+      "Public Toilet Guidelines and Sanitation Protocol"
+    ],
+    "expected_category": "Public Toilet"
+  },
+  {
+    "question": "How can I report illegal parking causing traffic gridlock?",
+    "expected_documents": [
+      "Traffic and Parking Grievance Redressal Procedure"
+    ],
+    "expected_category": "Traffic"
+  },
+  {
+    "question": "How does the municipal complaint escalation process work?",
+    "expected_documents": [
+      "Municipal Complaint Escalation Matrix"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What are the different stages and statuses of a complaint?",
+    "expected_documents": [
+      "Complaint Status and Tracking Guide"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What are the responsibilities of the Water Supply Department?",
+    "expected_documents": [
+      "Municipal Department Responsibilities Directory",
+      "Water Supply Complaint Procedure"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "What is the SLA for pothole repairs on major roads?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "What is the fine for illegal dumping of waste on public roads?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  },
+  {
+    "question": "Who repairs non-functional street lights at night?",
+    "expected_documents": [
+      "Street Light Complaint Procedure",
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Street Light"
+  },
+  {
+    "question": "How can I check the status of my complaint using Complaint ID?",
+    "expected_documents": [
+      "Complaint Status and Tracking Guide",
+      "General Municipal Complaint Registration Procedure"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What is the emergency helpline number for municipal grievances?",
+    "expected_documents": [
+      "Water Supply Complaint Procedure",
+      "Municipal Electricity and Power Supply Grievance Procedure"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "How long does dead animal removal take?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  },
+  {
+    "question": "How fast are missing manhole covers replaced?",
+    "expected_documents": [
+      "Drainage and Sewerage Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Drainage/Sewerage"
+  },
+  {
+    "question": "What can I do if water supplied is muddy or yellow?",
+    "expected_documents": [
+      "Water Supply Complaint Procedure"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "Can I submit a complaint in Marathi or mixed script?",
+    "expected_documents": [
+      "Citizen Frequently Asked Questions (FAQ) Charter",
+      "General Municipal Complaint Registration Procedure"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What is the escalation officer for Level 2 complaints?",
+    "expected_documents": [
+      "Municipal Complaint Escalation Matrix"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What documents are required to register a complaint?",
+    "expected_documents": [
+      "General Municipal Complaint Registration Procedure"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "How do I report low water pressure in my building?",
+    "expected_documents": [
+      "Water Supply Complaint Procedure"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "How to report community dustbin overflow?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  },
+  {
+    "question": "What to do if street light is flickering continuously?",
+    "expected_documents": [
+      "Street Light Complaint Procedure"
+    ],
+    "expected_category": "Street Light"
+  },
+  {
+    "question": "What is the turnaround time for a broken traffic signal?",
+    "expected_documents": [
+      "Traffic and Parking Grievance Redressal Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Traffic"
+  },
+  {
+    "question": "Who handles drainage overflow and sewage water?",
+    "expected_documents": [
+      "Drainage and Sewerage Complaint Procedure",
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Drainage/Sewerage"
+  },
+  {
+    "question": "What is the protocol if sewage enters residential premises?",
+    "expected_documents": [
+      "Drainage and Sewerage Complaint Procedure"
+    ],
+    "expected_category": "Drainage/Sewerage"
+  },
+  {
+    "question": "How to report a damaged speed breaker on colony road?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "How to report dirty public urinal near bus stand?",
+    "expected_documents": [
+      "Public Toilet Guidelines and Sanitation Protocol"
+    ],
+    "expected_category": "Public Toilet"
+  },
+  {
+    "question": "What is the SLA for distribution transformer breakdown?",
+    "expected_documents": [
+      "Municipal Electricity and Power Supply Grievance Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Electricity"
+  },
+  {
+    "question": "How can I reopen an unresolved complaint?",
+    "expected_documents": [
+      "Municipal Complaint Escalation Matrix"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What department is responsible for street sweeping and cleaning?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines",
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  },
+  {
+    "question": "How do I report high-voltage fluctuations damaging appliances?",
+    "expected_documents": [
+      "Municipal Electricity and Power Supply Grievance Procedure"
+    ],
+    "expected_category": "Electricity"
+  },
+  {
+    "question": "What should I do if traffic jam is caused by unauthorized hawkers?",
+    "expected_documents": [
+      "Traffic and Parking Grievance Redressal Procedure"
+    ],
+    "expected_category": "Traffic"
+  },
+  {
+    "question": "How to get a water tanker during pipeline repairs?",
+    "expected_documents": [
+      "Water Supply Complaint Procedure",
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Water Supply"
+  },
+  {
+    "question": "Who maintains footpaths and pedestrian sidewalks?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure",
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "What does the status 'Needs Review' mean?",
+    "expected_documents": [
+      "Complaint Status and Tracking Guide"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What does the status 'In Progress' mean?",
+    "expected_documents": [
+      "Complaint Status and Tracking Guide"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What is the deadline for resolving road cave-in?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "How do I report day-and-night burning street lamps?",
+    "expected_documents": [
+      "Street Light Complaint Procedure"
+    ],
+    "expected_category": "Street Light"
+  },
+  {
+    "question": "What is the resolution timeline for septic tank emptying?",
+    "expected_documents": [
+      "Public Toilet Guidelines and Sanitation Protocol"
+    ],
+    "expected_category": "Public Toilet"
+  },
+  {
+    "question": "How to report open nullah silt blockage before monsoon?",
+    "expected_documents": [
+      "Drainage and Sewerage Complaint Procedure"
+    ],
+    "expected_category": "Drainage/Sewerage"
+  },
+  {
+    "question": "How does the system automatically detect complaint priority?",
+    "expected_documents": [
+      "General Municipal Complaint Registration Procedure"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What is the role of the General Grievance Cell?",
+    "expected_documents": [
+      "Municipal Department Responsibilities Directory"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What to do if utility trench is left uncovered on road?",
+    "expected_documents": [
+      "Road and Pothole Complaint Procedure"
+    ],
+    "expected_category": "Road/Pothole"
+  },
+  {
+    "question": "Can I upload a PDF or DOCX file with my complaint?",
+    "expected_documents": [
+      "General Municipal Complaint Registration Procedure",
+      "Citizen Frequently Asked Questions (FAQ) Charter"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "What happens if a complaint is rejected?",
+    "expected_documents": [
+      "Complaint Status and Tracking Guide"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "Who is the Level 3 escalation authority?",
+    "expected_documents": [
+      "Municipal Complaint Escalation Matrix"
+    ],
+    "expected_category": "Other"
+  },
+  {
+    "question": "How do I report broken streetlight pole liable to fall?",
+    "expected_documents": [
+      "Street Light Complaint Procedure",
+      "Resolution SLA and Grievance Redressal Charter"
+    ],
+    "expected_category": "Street Light"
+  },
+  {
+    "question": "What is the penalty for open garbage burning?",
+    "expected_documents": [
+      "Solid Waste and Garbage Collection Guidelines"
+    ],
+    "expected_category": "Garbage/Waste Management"
+  }
+]
