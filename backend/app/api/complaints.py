@@ -152,14 +152,15 @@ def list_complaints(
     if current_user.role == "CITIZEN" or my_only:
         query = query.filter(Complaint.user_id == current_user.id)
     elif current_user.role == "ADMIN":
-        # Scoped view for specific departmental administrators if no explicit filter is given
-        if current_user.department and current_user.department != "General Grievance Cell" and not department:
+        # Strict Departmental Administrator Segregation:
+        # If not Super Admin, the department administrator is strictly restricted to their own department!
+        if not current_user.is_super_admin and current_user.department:
             query = query.filter(Complaint.department == current_user.department)
+        elif department:
+            query = query.filter(Complaint.department == department)
 
     if category:
         query = query.filter(Complaint.category == category)
-    if department:
-        query = query.filter(Complaint.department == department)
     if priority:
         query = query.filter(Complaint.priority == priority)
     if status_filter:
@@ -209,6 +210,14 @@ def get_complaint(
             detail="Access forbidden: You can only view your own submitted grievances.",
         )
 
+    # Guard: Department Admin can only view complaints within their assigned department
+    if current_user and current_user.role == "ADMIN" and not current_user.is_super_admin and current_user.department:
+        if complaint.department != current_user.department:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: You are restricted to viewing complaints within your assigned department ({current_user.department}).",
+            )
+
     return complaint
 
 
@@ -230,6 +239,20 @@ def update_complaint(
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Complaint '{complaint_id}' not found.")
+
+    # Guard: Department Admin can only update complaints within their assigned department
+    if not current_user.is_super_admin and current_user.department:
+        if complaint.department != current_user.department:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: You can only update complaints within your assigned department ({current_user.department}).",
+            )
+        # Department Admin cannot reassign complaints to a different department
+        if payload.department is not None and payload.department.value != current_user.department:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: Department administrators cannot reassign complaints outside ({current_user.department}).",
+            )
 
     if payload.status is not None:
         complaint.status = payload.status.value
@@ -268,6 +291,14 @@ def delete_complaint(
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Complaint '{complaint_id}' not found.")
+
+    # Guard: Department Admin can only delete complaints within their assigned department
+    if not current_user.is_super_admin and current_user.department:
+        if complaint.department != current_user.department:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: You can only delete complaints within your assigned department ({current_user.department}).",
+            )
 
     db.delete(complaint)
     db.commit()

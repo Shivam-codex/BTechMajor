@@ -25,7 +25,7 @@ import { fetchApi } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 
 export default function AdminDashboardPage() {
-  const { user, isAdmin, loading: authLoading } = useAuth();
+  const { user, isAdmin, isSuperAdmin, loading: authLoading } = useAuth();
 
   const [stats, setStats] = useState(null);
   const [complaints, setComplaints] = useState([]);
@@ -45,8 +45,13 @@ export default function AdminDashboardPage() {
     if (!isAdmin) return;
     setLoading(true);
     try {
-      // 1. Fetch dashboard statistics
-      const statsData = await fetchApi("/dashboard/stats");
+      // 1. Fetch dashboard statistics (scoped to department if departmental admin)
+      const statsParams = new URLSearchParams();
+      if (isSuperAdmin && departmentFilter) {
+        statsParams.append("department", departmentFilter);
+      }
+      const statsUrl = `/dashboard/stats${statsParams.toString() ? `?${statsParams.toString()}` : ""}`;
+      const statsData = await fetchApi(statsUrl);
       setStats(statsData);
 
       // 2. Build complaints query params
@@ -56,7 +61,11 @@ export default function AdminDashboardPage() {
       });
       if (searchTerm.trim()) queryParams.append("search", searchTerm.trim());
       if (categoryFilter) queryParams.append("category", categoryFilter);
-      if (departmentFilter) queryParams.append("department", departmentFilter);
+      if (isSuperAdmin) {
+        if (departmentFilter) queryParams.append("department", departmentFilter);
+      } else if (user?.department) {
+        queryParams.append("department", user.department);
+      }
       if (priorityFilter) queryParams.append("priority", priorityFilter);
       if (statusFilter) queryParams.append("status", statusFilter);
 
@@ -148,16 +157,25 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-200">
-              Official Session: {user?.department || "General Grievance Cell"}
+            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+              isSuperAdmin 
+                ? "bg-purple-100 text-purple-800 border-purple-200" 
+                : "bg-blue-100 text-blue-800 border-blue-200"
+            }`}>
+              {isSuperAdmin ? "Super Admin: All Municipal Departments" : `Department Admin: ${user?.department || "General"}`}
             </span>
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5 mt-1">
             <LayoutDashboard className="w-6 h-6 text-indigo-600" />
-            <span>Municipal Admin Command Center</span>
+            <span>
+              {isSuperAdmin ? "City-Wide Grievance Command Center" : `${user?.department} Command Center`}
+            </span>
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Logged in as <strong className="text-slate-800">{user?.full_name}</strong>. Real-time tracking, rule explainability audit, and status updates for citizen grievances.
+            Logged in as <strong className="text-slate-800">{user?.full_name}</strong>.{" "}
+            {isSuperAdmin 
+              ? "Comprehensive municipal overview across all civic departments."
+              : `Strict departmental segregation active: You have administrative authority exclusively over ${user?.department} grievances.`}
           </p>
         </div>
 
@@ -282,21 +300,28 @@ export default function AdminDashboardPage() {
             <option value="Other">Other</option>
           </select>
 
-          <select
-            value={departmentFilter}
-            onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 text-slate-700 font-medium"
-          >
-            <option value="">All Departments</option>
-            <option value="Water Supply Department">Water Supply Department</option>
-            <option value="Sanitation Department">Sanitation Department</option>
-            <option value="Roads and Infrastructure Department">Roads & Infrastructure</option>
-            <option value="Electrical Department">Electrical Department</option>
-            <option value="Drainage Department">Drainage Department</option>
-            <option value="Public Health and Sanitation Department">Public Health</option>
-            <option value="Traffic Management Department">Traffic Department</option>
-            <option value="General Grievance Cell">General Grievance Cell</option>
-          </select>
+          {isSuperAdmin ? (
+            <select
+              value={departmentFilter}
+              onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }}
+              className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs bg-slate-50 text-slate-700 font-medium"
+            >
+              <option value="">All Departments</option>
+              <option value="Water Supply Department">Water Supply Department</option>
+              <option value="Sanitation Department">Sanitation Department</option>
+              <option value="Roads and Infrastructure Department">Roads & Infrastructure</option>
+              <option value="Electrical Department">Electrical Department</option>
+              <option value="Drainage Department">Drainage Department</option>
+              <option value="Public Health and Sanitation Department">Public Health</option>
+              <option value="Traffic Management Department">Traffic Department</option>
+              <option value="General Grievance Cell">General Grievance Cell</option>
+            </select>
+          ) : (
+            <div className="px-3 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-900 text-xs font-semibold flex items-center justify-between">
+              <span className="truncate">{user?.department}</span>
+              <span className="text-[10px] text-indigo-600 uppercase font-mono ml-1.5">Locked</span>
+            </div>
+          )}
 
           <select
             value={priorityFilter}

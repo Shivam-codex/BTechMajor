@@ -252,3 +252,91 @@ def test_knowledge_base_unauthenticated_unauthorized(client):
     """Unauthenticated caller must be rejected with 401 Unauthorized."""
     resp = client.get("/api/knowledge-base/documents")
     assert resp.status_code == 401
+
+
+def test_department_admin_complaint_isolation(client, db_session, sample_users):
+    """
+    Departmental admin (Water Supply) can ONLY view complaints assigned to Water Supply Department.
+    Complaints assigned to Roads/Electrical must NOT be visible or editable.
+    """
+    cmp_water = Complaint(
+        id="CMP-TEST-WATER01",
+        complaint_text="Low water pressure on 5th floor",
+        category=ComplaintCategory.WATER_SUPPLY.value,
+        department=DepartmentName.WATER_SUPPLY.value,
+        priority=ComplaintPriority.MEDIUM.value,
+        status=ComplaintStatus.SUBMITTED.value,
+    )
+    cmp_road = Complaint(
+        id="CMP-TEST-ROAD01",
+        complaint_text="Huge crater on Baner main road",
+        category=ComplaintCategory.ROAD_POTHOLE.value,
+        department=DepartmentName.ROADS_INFRASTRUCTURE.value,
+        priority=ComplaintPriority.HIGH.value,
+        status=ComplaintStatus.SUBMITTED.value,
+    )
+    db_session.add_all([cmp_water, cmp_road])
+    db_session.commit()
+
+    dept_headers = {"Authorization": f"Bearer {sample_users['dept_admin_token']}"}
+
+    # 1. List complaints: must only return water complaints
+    list_resp = client.get("/api/complaints", headers=dept_headers)
+    assert list_resp.status_code == 200
+    items = list_resp.json()["items"]
+    assert all(c["department"] == DepartmentName.WATER_SUPPLY.value for c in items)
+    assert any(c["id"] == "CMP-TEST-WATER01" for c in items)
+    assert not any(c["id"] == "CMP-TEST-ROAD01" for c in items)
+
+    # 2. Get single complaint: water allowed, road forbidden
+    get_water = client.get("/api/complaints/CMP-TEST-WATER01", headers=dept_headers)
+    assert get_water.status_code == 200
+
+    get_road = client.get("/api/complaints/CMP-TEST-ROAD01", headers=dept_headers)
+    assert get_road.status_code == 403
+    assert "restricted to viewing complaints within your assigned department" in get_road.json()["detail"]
+
+    # 3. Update complaint: road forbidden
+    put_road = client.put(
+        "/api/complaints/CMP-TEST-ROAD01",
+        json={"status": "In Progress"},
+        headers=dept_headers,
+    )
+    assert put_road.status_code == 403
+
+    # 4. Delete complaint: road forbidden
+    del_road = client.delete("/api/complaints/CMP-TEST-ROAD01", headers=dept_headers)
+    assert del_road.status_code == 403
+
+
+def test_department_admin_dashboard_stats_isolation(client, db_session, sample_users):
+    """
+    Departmental admin requesting /api/dashboard/stats sees stats scoped strictly to their department.
+    """
+    cmp_water = Complaint(
+        id="CMP-TEST-WTR99",
+        complaint_text="Muddy water in pipeline",
+        category=ComplaintCategory.WATER_SUPPLY.value,
+        department=DepartmentName.WATER_SUPPLY.value,
+        priority=ComplaintPriority.HIGH.value,
+        status=ComplaintStatus.IN_PROGRESS.value,
+    )
+    cmp_road = Complaint(
+        id="CMP-TEST-RD99",
+        complaint_text="Bridge expansion joint issue",
+        category=ComplaintCategory.ROAD_POTHOLE.value,
+        department=DepartmentName.ROADS_INFRASTRUCTURE.value,
+        priority=ComplaintPriority.CRITICAL.value,
+        status=ComplaintStatus.SUBMITTED.value,
+    )
+    db_session.add_all([cmp_water, cmp_road])
+    db_session.commit()
+
+    dept_headers = {"Authorization": f"Bearer {sample_users['dept_admin_token']}"}
+    stats_resp = client.get("/api/dashboard/stats", headers=dept_headers)
+    assert stats_resp.status_code == 200
+    data = stats_resp.json()
+
+    # In by_department distribution, ONLY Water Supply Department should exist
+    for d in data["by_department"]:
+        assert d["department"] == DepartmentName.WATER_SUPPLY.value

@@ -28,7 +28,7 @@ import { useAuth } from "../../../context/AuthContext";
 export default function ComplaintDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin, isSuperAdmin } = useAuth();
   const complaintId = params.id;
 
   const [complaint, setComplaint] = useState(null);
@@ -295,20 +295,27 @@ export default function ComplaintDetailPage() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Assigned Department</label>
-                <select
-                  value={editDepartment}
-                  onChange={(e) => setEditDepartment(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                >
-                  <option value="Water Supply Department">Water Supply Department</option>
-                  <option value="Sanitation Department">Sanitation Department</option>
-                  <option value="Roads and Infrastructure Department">Roads and Infrastructure Department</option>
-                  <option value="Electrical Department">Electrical Department</option>
-                  <option value="Drainage Department">Drainage Department</option>
-                  <option value="Public Health and Sanitation Department">Public Health and Sanitation Department</option>
-                  <option value="Traffic Management Department">Traffic Management Department</option>
-                  <option value="General Grievance Cell">General Grievance Cell</option>
-                </select>
+                {isSuperAdmin ? (
+                  <select
+                    value={editDepartment}
+                    onChange={(e) => setEditDepartment(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  >
+                    <option value="Water Supply Department">Water Supply Department</option>
+                    <option value="Sanitation Department">Sanitation Department</option>
+                    <option value="Roads and Infrastructure Department">Roads and Infrastructure Department</option>
+                    <option value="Electrical Department">Electrical Department</option>
+                    <option value="Drainage Department">Drainage Department</option>
+                    <option value="Public Health and Sanitation Department">Public Health and Sanitation Department</option>
+                    <option value="Traffic Management Department">Traffic Management Department</option>
+                    <option value="General Grievance Cell">General Grievance Cell</option>
+                  </select>
+                ) : (
+                  <div className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium text-slate-700 flex items-center justify-between">
+                    <span>{editDepartment}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">Assigned</span>
+                  </div>
+                )}
               </div>
 
               <div>

@@ -3,7 +3,8 @@ Dashboard Analytics API.
 Aggregates municipal complaints by status, category, department, and priority for admin visualization.
 """
 
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -29,28 +30,43 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
     summary="Get aggregated statistics and chart distributions for Admin Dashboard (Admin Only)",
 )
 def get_dashboard_stats(
+    department: Optional[str] = Query(None, description="Filter stats by department (Super Admin only)"),
     current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
     """
     Computes key performance indicators (KPIs) and distributions.
     STRICTLY RESTRICTED TO MUNICIPAL ADMINISTRATORS.
+    Department Administrators are strictly isolated to their assigned department's data.
     """
-    total = db.query(func.count(Complaint.id)).scalar() or 0
+    # Departmental Isolation Enforcement
+    target_dept: Optional[str] = None
+    if not current_user.is_super_admin and current_user.department:
+        target_dept = current_user.department
+    elif department:
+        target_dept = department
 
-    submitted = db.query(func.count(Complaint.id)).filter(Complaint.status == ComplaintStatus.SUBMITTED.value).scalar() or 0
-    in_progress = db.query(func.count(Complaint.id)).filter(Complaint.status == ComplaintStatus.IN_PROGRESS.value).scalar() or 0
-    resolved = db.query(func.count(Complaint.id)).filter(Complaint.status == ComplaintStatus.RESOLVED.value).scalar() or 0
-    needs_review = db.query(func.count(Complaint.id)).filter(Complaint.status == ComplaintStatus.NEEDS_REVIEW.value).scalar() or 0
+    base_q = db.query(Complaint)
+    if target_dept:
+        base_q = base_q.filter(Complaint.department == target_dept)
 
-    high_critical = db.query(func.count(Complaint.id)).filter(
+    total = base_q.count()
+
+    submitted = base_q.filter(Complaint.status == ComplaintStatus.SUBMITTED.value).count()
+    in_progress = base_q.filter(Complaint.status == ComplaintStatus.IN_PROGRESS.value).count()
+    resolved = base_q.filter(Complaint.status == ComplaintStatus.RESOLVED.value).count()
+    needs_review = base_q.filter(Complaint.status == ComplaintStatus.NEEDS_REVIEW.value).count()
+
+    high_critical = base_q.filter(
         Complaint.priority.in_([ComplaintPriority.HIGH.value, ComplaintPriority.CRITICAL.value])
-    ).scalar() or 0
+    ).count()
 
     # Group by category
+    cat_q = db.query(Complaint.category, func.count(Complaint.id))
+    if target_dept:
+        cat_q = cat_q.filter(Complaint.department == target_dept)
     cat_rows = (
-        db.query(Complaint.category, func.count(Complaint.id))
-        .group_by(Complaint.category)
+        cat_q.group_by(Complaint.category)
         .order_by(func.count(Complaint.id).desc())
         .all()
     )
@@ -64,27 +80,33 @@ def get_dashboard_stats(
     ]
 
     # Group by department
+    dept_q = db.query(Complaint.department, func.count(Complaint.id))
+    if target_dept:
+        dept_q = dept_q.filter(Complaint.department == target_dept)
     dept_rows = (
-        db.query(Complaint.department, func.count(Complaint.id))
-        .group_by(Complaint.department)
+        dept_q.group_by(Complaint.department)
         .order_by(func.count(Complaint.id).desc())
         .all()
     )
     by_department = [DepartmentDistribution(department=row[0], count=row[1]) for row in dept_rows]
 
     # Group by priority
+    prio_q = db.query(Complaint.priority, func.count(Complaint.id))
+    if target_dept:
+        prio_q = prio_q.filter(Complaint.department == target_dept)
     priority_rows = (
-        db.query(Complaint.priority, func.count(Complaint.id))
-        .group_by(Complaint.priority)
+        prio_q.group_by(Complaint.priority)
         .order_by(func.count(Complaint.id).desc())
         .all()
     )
     by_priority = [PriorityDistribution(priority=row[0], count=row[1]) for row in priority_rows]
 
     # Group by status
+    status_q = db.query(Complaint.status, func.count(Complaint.id))
+    if target_dept:
+        status_q = status_q.filter(Complaint.department == target_dept)
     status_rows = (
-        db.query(Complaint.status, func.count(Complaint.id))
-        .group_by(Complaint.status)
+        status_q.group_by(Complaint.status)
         .order_by(func.count(Complaint.id).desc())
         .all()
     )
