@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     phone: Optional[str] = None
     role: str
     department: Optional[str] = None
+    is_super_admin: bool = False
     is_active: bool
     created_at: Optional[datetime] = None
 

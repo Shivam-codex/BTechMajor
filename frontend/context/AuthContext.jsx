@@ -69,6 +69,18 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  const isSuperAdmin = Boolean(
+    user && (
+      user.is_super_admin === true ||
+      user.role === "SUPER_ADMIN" ||
+      (user.role === "ADMIN" && (
+        user.email === "admin@smartcity.gov" ||
+        user.department === "General Grievance Cell" ||
+        !user.department
+      ))
+    )
+  );
+
   const value = {
     user,
     token,
@@ -77,6 +89,7 @@ export function AuthProvider({ children }) {
     role: user?.role || null,
     isCitizen: user?.role === "CITIZEN",
     isAdmin: user?.role === "ADMIN",
+    isSuperAdmin,
     login,
     register,
     logout,

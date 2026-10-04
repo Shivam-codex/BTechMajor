@@ -31,7 +31,7 @@ def client(db_session):
 
 @pytest.fixture
 def sample_users(db_session):
-    """Creates a citizen user and an admin user with access tokens."""
+    """Creates a citizen user, super admin, and departmental admin with access tokens."""
     citizen = User(
         full_name="Citizen One",
         email="citizen1@example.com",
@@ -47,19 +47,31 @@ def sample_users(db_session):
         department="General Grievance Cell",
         is_active=True,
     )
-    db_session.add_all([citizen, admin])
+    dept_admin = User(
+        full_name="Water Dept Officer",
+        email="water.officer@smartcity.gov",
+        hashed_password=hash_password("WaterPass@1"),
+        role="ADMIN",
+        department="Water Supply Department",
+        is_active=True,
+    )
+    db_session.add_all([citizen, admin, dept_admin])
     db_session.commit()
     db_session.refresh(citizen)
     db_session.refresh(admin)
+    db_session.refresh(dept_admin)
 
     citizen_token = create_access_token({"sub": citizen.email, "id": citizen.id, "role": citizen.role})
     admin_token = create_access_token({"sub": admin.email, "id": admin.id, "role": admin.role})
+    dept_admin_token = create_access_token({"sub": dept_admin.email, "id": dept_admin.id, "role": dept_admin.role})
 
     return {
         "citizen": citizen,
         "admin": admin,
+        "dept_admin": dept_admin,
         "citizen_token": citizen_token,
         "admin_token": admin_token,
+        "dept_admin_token": dept_admin_token,
     }
 
 
@@ -209,3 +221,34 @@ def test_admin_can_update_and_delete_complaint(client, db_session, sample_users)
     del_resp = client.delete(f"/api/complaints/{cmp.id}", headers=admin_headers)
     assert del_resp.status_code == 200
     assert del_resp.json()["deleted_id"] == "CMP-2026-ADM001"
+
+
+def test_knowledge_base_super_admin_allowed(client, sample_users):
+    """Super Administrator must be permitted to inspect knowledge base documents."""
+    super_admin_headers = {"Authorization": f"Bearer {sample_users['admin_token']}"}
+    resp = client.get("/api/knowledge-base/documents", headers=super_admin_headers)
+    assert resp.status_code == 200
+    docs = resp.json()
+    assert len(docs) >= 14
+
+
+def test_knowledge_base_dept_admin_forbidden(client, sample_users):
+    """Departmental administrator must be rejected with 403 Forbidden."""
+    dept_headers = {"Authorization": f"Bearer {sample_users['dept_admin_token']}"}
+    resp = client.get("/api/knowledge-base/documents", headers=dept_headers)
+    assert resp.status_code == 403
+    assert "Super Administrator privileges required" in resp.json()["detail"]
+
+
+def test_knowledge_base_citizen_forbidden(client, sample_users):
+    """Citizen must be rejected with 403 Forbidden when accessing knowledge base documents."""
+    citizen_headers = {"Authorization": f"Bearer {sample_users['citizen_token']}"}
+    resp = client.get("/api/knowledge-base/documents", headers=citizen_headers)
+    assert resp.status_code == 403
+    assert "Super Administrator privileges required" in resp.json()["detail"]
+
+
+def test_knowledge_base_unauthenticated_unauthorized(client):
+    """Unauthenticated caller must be rejected with 401 Unauthorized."""
+    resp = client.get("/api/knowledge-base/documents")
+    assert resp.status_code == 401

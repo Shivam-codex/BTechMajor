@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { 
   BookOpen, 
   Search, 
@@ -10,11 +11,15 @@ import {
   ExternalLink,
   Layers,
   ShieldCheck,
-  Tag
+  Tag,
+  Lock,
+  ArrowRight
 } from "lucide-react";
 import { fetchApi } from "../../utils/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function KnowledgeBasePage() {
+  const { user, isAuthenticated, isAdmin, isSuperAdmin, loading: authLoading } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -27,6 +32,7 @@ export default function KnowledgeBasePage() {
 
   useEffect(() => {
     async function loadDocuments() {
+      if (!isSuperAdmin) return;
       try {
         const data = await fetchApi("/knowledge-base/documents");
         setDocuments(data || []);
@@ -36,8 +42,15 @@ export default function KnowledgeBasePage() {
         setLoading(false);
       }
     }
-    loadDocuments();
-  }, []);
+
+    if (!authLoading) {
+      if (isSuperAdmin) {
+        loadDocuments();
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [authLoading, isSuperAdmin]);
 
   const openDocumentModal = async (docId) => {
     setSelectedDocId(docId);
@@ -65,6 +78,51 @@ export default function KnowledgeBasePage() {
     const matchesCategory = categoryFilter ? d.category === categoryFilter : true;
     return matchesSearch && matchesCategory;
   });
+
+  if (authLoading) {
+    return (
+      <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-medium">Verifying Super Administrator privileges...</p>
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto my-12 p-8 bg-white border border-red-200 rounded-3xl shadow-sm text-center space-y-6">
+        <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto">
+          <Lock className="w-8 h-8" />
+        </div>
+        <div className="space-y-2">
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200">
+            Super Administrator Restricted
+          </span>
+          <h2 className="text-2xl font-bold text-slate-900">Access Restricted to Super Admin</h2>
+          <p className="text-sm text-slate-600 max-w-lg mx-auto leading-relaxed">
+            The municipal operational guidelines, regulatory corpus, and internal knowledge base 
+            are strictly restricted to the Super Administrator. Department officers, citizens, and guests 
+            do not have authorization to view raw policy documentation.
+          </p>
+        </div>
+
+        <div className="pt-2 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href={isAuthenticated ? (isAdmin ? "/dashboard" : "/complaints/my") : "/login"}
+            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm"
+          >
+            {isAuthenticated ? (isAdmin ? "Go to Admin Dashboard" : "Go to My Complaints") : "Sign In as Super Admin"}
+          </Link>
+          <Link
+            href="/assistant"
+            className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors"
+          >
+            Ask Municipal Assistant Instead
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">

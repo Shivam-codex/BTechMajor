@@ -108,3 +108,18 @@ def get_current_admin(
             detail="Administrative privileges required. Citizen access forbidden.",
         )
     return current_user
+
+
+def get_current_super_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    """
+    Strictly verifies that the caller has Super Administrator privileges.
+    Returns 403 Forbidden for citizens, departmental officers, and unauthorized callers.
+    """
+    if not current_user.is_super_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Administrator privileges required. Access forbidden for departmental staff and citizens.",
+        )
+    return current_user

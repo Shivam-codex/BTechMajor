@@ -173,16 +173,17 @@ def test_dashboard_stats(client, admin_token):
     assert len(data["by_priority"]) > 0
 
 
-def test_knowledge_base_documents_endpoints(client):
+def test_knowledge_base_documents_endpoints(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
     # List all documents
-    list_res = client.get("/api/knowledge-base/documents")
+    list_res = client.get("/api/knowledge-base/documents", headers=headers)
     assert list_res.status_code == 200
     docs = list_res.json()
     assert len(docs) >= 14
     assert any(d["document_id"] == "KB-001" for d in docs)
 
     # Get single document details
-    single_res = client.get("/api/knowledge-base/documents/KB-001")
+    single_res = client.get("/api/knowledge-base/documents/KB-001", headers=headers)
     assert single_res.status_code == 200
     doc_detail = single_res.json()
     assert doc_detail["document_id"] == "KB-001"

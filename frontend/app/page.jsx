@@ -24,24 +24,30 @@ import {
   Cpu
 } from "lucide-react";
 import { fetchApi } from "../utils/api";
+import { useAuth } from "../context/AuthContext";
 
 export default function HomePage() {
+  const { isAuthenticated, isAdmin, isSuperAdmin } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function loadStats() {
+      if (!isAdmin) {
+        setLoading(false);
+        return;
+      }
       try {
         const data = await fetchApi("/dashboard/stats");
         setStats(data);
       } catch (err) {
-        console.error("Failed to load live dashboard stats:", err);
+        console.warn("Dashboard stats restricted to administrators.");
       } finally {
         setLoading(false);
       }
     }
     loadStats();
-  }, []);
+  }, [isAdmin]);
 
   const categories = [
     { name: "Water Supply", icon: Droplet, color: "text-blue-500 bg-blue-50" },
@@ -86,13 +92,23 @@ export default function HomePage() {
               <span>Submit Grievance</span>
             </Link>
 
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-sm border border-white/20 transition-all backdrop-blur"
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              <span>Admin Dashboard</span>
-            </Link>
+            {isAdmin ? (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-sm border border-white/20 transition-all backdrop-blur"
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                <span>Admin Dashboard</span>
+              </Link>
+            ) : isAuthenticated ? (
+              <Link
+                href="/complaints/my"
+                className="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-sm border border-white/20 transition-all backdrop-blur"
+              >
+                <FileUp className="w-4 h-4" />
+                <span>My Complaints</span>
+              </Link>
+            ) : null}
 
             <Link
               href="/assistant"
@@ -201,10 +217,17 @@ export default function HomePage() {
             <h3 className="text-xl font-bold text-slate-900">Municipal Grievance Categories</h3>
             <p className="text-xs text-slate-500 mt-0.5">Automated rule classification and department routing across 9 civic domains.</p>
           </div>
-          <Link href="/knowledge-base" className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700">
-            <span>View All Procedures</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+          {isSuperAdmin ? (
+            <Link href="/knowledge-base" className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700">
+              <span>View All Procedures</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          ) : (
+            <Link href="/assistant" className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700">
+              <span>Ask Municipal Assistant</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          )}
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

@@ -19,14 +19,13 @@ import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { user, isAuthenticated, isCitizen, isAdmin, logout } = useAuth();
+  const { user, isAuthenticated, isCitizen, isAdmin, isSuperAdmin, logout } = useAuth();
 
   // Dynamic Navigation Items based on authentication role
   let navItems = [
     { name: "Overview", href: "/", icon: Building2 },
     { name: "Submit Grievance", href: "/complaints", icon: FileText },
     { name: "Municipal Assistant", href: "/assistant", icon: Bot },
-    { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
   ];
 
   if (isAuthenticated) {
@@ -35,15 +34,17 @@ export default function Navbar() {
         { name: "My Complaints", href: "/complaints/my", icon: FolderOpen },
         { name: "Submit Grievance", href: "/complaints", icon: FileText },
         { name: "Municipal Assistant", href: "/assistant", icon: Bot },
-        { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
       ];
     } else if (isAdmin) {
       navItems = [
         { name: "Admin Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { name: "Lodge Intake", href: "/complaints", icon: FileText },
         { name: "Municipal Assistant", href: "/assistant", icon: Bot },
-        { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
       ];
+      // Knowledge base is strictly restricted to Super Administrator
+      if (isSuperAdmin) {
+        navItems.push({ name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen });
+      }
     }
   }
 
@@ -112,7 +113,7 @@ export default function Navbar() {
                   <div className="text-left">
                     <span className="font-bold block leading-tight">{user?.full_name}</span>
                     <span className="text-[10px] text-slate-500 block leading-tight">
-                      {isAdmin ? `Admin: ${user?.department || "General"}` : "Citizen"}
+                      {isSuperAdmin ? "Super Admin" : isAdmin ? `Admin: ${user?.department || "Dept"}` : "Citizen"}
                     </span>
                   </div>
                 </div>

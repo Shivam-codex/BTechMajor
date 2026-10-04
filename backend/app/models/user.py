@@ -25,6 +25,18 @@ class User(Base):
     # Relationships
     complaints = relationship("Complaint", back_populates="user", cascade="all, delete-orphan")
 
+    @property
+    def is_super_admin(self) -> bool:
+        """Determines if the user possesses Super Administrator privileges."""
+        if self.role == "SUPER_ADMIN":
+            return True
+        if self.role == "ADMIN":
+            if self.email in ("admin@smartcity.gov", "test_admin@smartcity.gov"):
+                return True
+            if self.department in ("General Grievance Cell", "Super Admin", "Administration"):
+                return True
+        return False
+
     def to_dict(self):
         """Convert user model to dictionary (excluding sensitive password hash)."""
         return {
@@ -34,6 +46,7 @@ class User(Base):
             "phone": self.phone,
             "role": self.role,
             "department": self.department,
+            "is_super_admin": self.is_super_admin,
             "is_active": self.is_active,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

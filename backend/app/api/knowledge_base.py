@@ -4,13 +4,14 @@ Allows citizens and administrators to inspect municipal procedures and document 
 """
 
 from typing import List, Dict
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from backend.app.schemas.knowledge_schema import (
     KnowledgeDocumentSummary,
     KnowledgeDocumentDetail,
     KnowledgeChunkResponse,
 )
 from backend.app.services.knowledge.knowledge_loader import load_and_chunk_knowledge_base
+from backend.app.api.deps import get_current_super_admin
 
 router = APIRouter(prefix="/knowledge-base", tags=["Knowledge Base"])
 
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/knowledge-base", tags=["Knowledge Base"])
     "/documents",
     response_model=List[KnowledgeDocumentSummary],
     summary="List all official municipal knowledge base documents",
+    dependencies=[Depends(get_current_super_admin)],
 )
 def list_knowledge_documents():
     """
@@ -46,6 +48,7 @@ def list_knowledge_documents():
     "/documents/{document_id}",
     response_model=KnowledgeDocumentDetail,
     summary="Get full document text and individual chunks",
+    dependencies=[Depends(get_current_super_admin)],
 )
 def get_knowledge_document(document_id: str):
     """
