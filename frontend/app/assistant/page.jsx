@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { 
   Bot, 
   Send, 
@@ -9,14 +10,17 @@ import {
   ChevronDown, 
   ChevronUp, 
   Building2, 
-  HelpCircle,
-  ShieldCheck,
-  Tag,
-  AlertCircle
+  HelpCircle, 
+  ShieldCheck, 
+  Tag, 
+  AlertCircle,
+  Lock
 } from "lucide-react";
 import { fetchApi } from "../../utils/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function AssistantPage() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -90,6 +94,46 @@ export default function AssistantPage() {
       setLoading(false);
     }
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-[50vh] flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-medium">Verifying account authentication...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-xl mx-auto my-12 p-8 bg-white border border-slate-200 rounded-3xl shadow-sm text-center space-y-6">
+        <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto">
+          <Bot className="w-8 h-8" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-bold text-slate-900">Sign In to Use Municipal Assistant</h2>
+          <p className="text-sm text-slate-600 leading-relaxed">
+            The retrieval-augmented civic assistant is available to verified citizens and municipal officials. 
+            Please sign in or create an account to query procedures and timelines.
+          </p>
+        </div>
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <Link
+            href="/login"
+            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm"
+          >
+            Sign In to Portal
+          </Link>
+          <Link
+            href="/register"
+            className="px-6 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors"
+          >
+            Create Citizen Account
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">

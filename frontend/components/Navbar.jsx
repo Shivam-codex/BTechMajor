@@ -22,10 +22,9 @@ export default function Navbar() {
   const { user, isAuthenticated, isCitizen, isAdmin, isSuperAdmin, logout } = useAuth();
 
   // Dynamic Navigation Items based on authentication role
+  // Unauthenticated first-time visitors see ONLY Overview
   let navItems = [
     { name: "Overview", href: "/", icon: Building2 },
-    { name: "Submit Grievance", href: "/complaints", icon: FileText },
-    { name: "Municipal Assistant", href: "/assistant", icon: Bot },
   ];
 
   if (isAuthenticated) {
