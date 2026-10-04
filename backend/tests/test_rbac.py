@@ -340,3 +340,49 @@ def test_department_admin_dashboard_stats_isolation(client, db_session, sample_u
     # In by_department distribution, ONLY Water Supply Department should exist
     for d in data["by_department"]:
         assert d["department"] == DepartmentName.WATER_SUPPLY.value
+
+
+def test_all_departmental_admins_authentication_and_isolation(client, db_session):
+    """
+    Verify all municipal departments have working admin accounts and are properly isolated.
+    """
+    departments = [
+        ("water.admin@smartcity.gov", DepartmentName.WATER_SUPPLY.value),
+        ("sanitation.admin@smartcity.gov", DepartmentName.SANITATION.value),
+        ("roads.admin@smartcity.gov", DepartmentName.ROADS_INFRASTRUCTURE.value),
+        ("electrical.admin@smartcity.gov", DepartmentName.ELECTRICAL.value),
+        ("drainage.admin@smartcity.gov", DepartmentName.DRAINAGE.value),
+        ("health.admin@smartcity.gov", DepartmentName.PUBLIC_HEALTH.value),
+        ("traffic.admin@smartcity.gov", DepartmentName.TRAFFIC.value),
+    ]
+
+    for email, dept_name in departments:
+        user = User(
+            full_name=f"{dept_name} Officer",
+            email=email,
+            hashed_password=hash_password("Admin@12345"),
+            role="ADMIN",
+            department=dept_name,
+            is_active=True,
+        )
+        db_session.add(user)
+    db_session.commit()
+
+    for email, dept_name in departments:
+        # 1. Login
+        login_resp = client.post("/api/auth/login", json={"email": email, "password": "Admin@12345"})
+        assert login_resp.status_code == 200, f"Failed to login for {email}"
+        data = login_resp.json()
+        assert data["user"]["role"] == "ADMIN"
+        assert data["user"]["department"] == dept_name
+        token = data["access_token"]
+
+        # 2. Query Dashboard Stats
+        headers = {"Authorization": f"Bearer {token}"}
+        stats_resp = client.get("/api/dashboard/stats", headers=headers)
+        assert stats_resp.status_code == 200
+        stats = stats_resp.json()
+        # Verify that all returned department distributions match only this admin's department
+        for d in stats.get("by_department", []):
+            assert d["department"] == dept_name
+

@@ -200,9 +200,9 @@ function LoginForm() {
         </form>
 
         {/* Demo Fast-Fill Chips for Academic Evaluation */}
-        <div className="pt-4 border-t border-slate-100 space-y-2">
+        <div className="pt-4 border-t border-slate-100 space-y-2.5">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Academic Demo Credentials:
+            Academic Demo Credentials (1-Click Fill):
           </span>
           <div className="space-y-1.5">
             <button
@@ -228,18 +228,39 @@ function LoginForm() {
               </div>
               <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
             </button>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => handleQuickFill("water.admin@smartcity.gov", "Admin@12345", "admin")}
-              className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-cyan-50 border border-slate-200 hover:border-cyan-200 text-slate-700 text-[11px] flex items-center justify-between transition-all"
-            >
-              <div>
-                <span className="font-semibold text-cyan-700">Dept Admin:</span> Water Supply Department
-                <span className="block text-[10px] text-slate-400">water.admin@smartcity.gov • Admin@12345</span>
-              </div>
-              <Building2 className="w-3.5 h-3.5 text-cyan-600" />
-            </button>
+          {/* Departmental Admins Grid */}
+          <div className="pt-1">
+            <span className="text-[10px] font-semibold text-slate-500 block mb-1.5">
+              Department Admins (Password: <code className="font-mono text-slate-600">Admin@12345</code>):
+            </span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {[
+                { label: "Water Supply", email: "water.admin@smartcity.gov", dept: "Water Supply Department" },
+                { label: "Sanitation", email: "sanitation.admin@smartcity.gov", dept: "Sanitation Department" },
+                { label: "Roads & Infra", email: "roads.admin@smartcity.gov", dept: "Roads and Infrastructure Department" },
+                { label: "Electrical", email: "electrical.admin@smartcity.gov", dept: "Electrical Department" },
+                { label: "Drainage", email: "drainage.admin@smartcity.gov", dept: "Drainage Department" },
+                { label: "Public Health", email: "health.admin@smartcity.gov", dept: "Public Health and Sanitation Department" },
+                { label: "Traffic Mgmt", email: "traffic.admin@smartcity.gov", dept: "Traffic Management Department" },
+              ].map((da) => (
+                <button
+                  key={da.email}
+                  type="button"
+                  onClick={() => handleQuickFill(da.email, "Admin@12345", "admin")}
+                  className={`p-1.5 rounded-lg border text-left text-[11px] transition-all flex items-center justify-between ${
+                    email === da.email
+                      ? "bg-indigo-50 border-indigo-300 text-indigo-900 font-bold"
+                      : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                  }`}
+                  title={`${da.dept} (${da.email})`}
+                >
+                  <span className="truncate pr-1">{da.label}</span>
+                  <Building2 className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 

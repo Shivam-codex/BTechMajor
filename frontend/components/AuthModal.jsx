@@ -250,35 +250,56 @@ export default function AuthModal({ isOpen, onClose, initialTab = "login" }) {
               </button>
 
               {/* One-Click Demo Credentials */}
-              <div className="pt-2 border-t border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-500 block mb-2">1-Click Demo Credentials:</span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <span className="text-[11px] font-semibold text-slate-500 block">1-Click Demo Credentials:</span>
+                <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleQuickFill("citizen@example.com", "Citizen@12345", "citizen")}
-                    className="p-2 text-left rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-colors"
+                    className="p-1.5 text-left rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-colors"
                   >
-                    <span className="text-[11px] font-bold text-blue-700 block">Citizen</span>
+                    <span className="text-[11px] font-bold text-blue-700 block">Citizen User</span>
                     <span className="text-[10px] text-slate-500 block">citizen@example.com</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => handleQuickFill("water.admin@smartcity.gov", "Admin@12345", "admin")}
-                    className="p-2 text-left rounded-lg bg-slate-50 hover:bg-cyan-50 border border-slate-200 hover:border-cyan-200 transition-colors"
-                  >
-                    <span className="text-[11px] font-bold text-cyan-700 block">Dept Admin</span>
-                    <span className="text-[10px] text-slate-500 block">water.admin@...</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => handleQuickFill("admin@smartcity.gov", "Admin@12345", "admin")}
-                    className="p-2 text-left rounded-lg bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-colors"
+                    className="p-1.5 text-left rounded-lg bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-colors"
                   >
                     <span className="text-[11px] font-bold text-indigo-700 block">Super Admin</span>
                     <span className="text-[10px] text-slate-500 block">admin@smartcity...</span>
                   </button>
+                </div>
+
+                <div>
+                  <span className="text-[10px] font-semibold text-slate-500 block mb-1">
+                    Department Admin Logins:
+                  </span>
+                  <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                    {[
+                      { label: "Water Supply", email: "water.admin@smartcity.gov" },
+                      { label: "Sanitation", email: "sanitation.admin@smartcity.gov" },
+                      { label: "Roads & Infra", email: "roads.admin@smartcity.gov" },
+                      { label: "Electrical", email: "electrical.admin@smartcity.gov" },
+                      { label: "Drainage", email: "drainage.admin@smartcity.gov" },
+                      { label: "Public Health", email: "health.admin@smartcity.gov" },
+                      { label: "Traffic Mgmt", email: "traffic.admin@smartcity.gov" },
+                    ].map((da) => (
+                      <button
+                        key={da.email}
+                        type="button"
+                        onClick={() => handleQuickFill(da.email, "Admin@12345", "admin")}
+                        className={`p-1.5 text-left rounded-lg border text-[10px] transition-colors truncate ${
+                          loginEmail === da.email
+                            ? "bg-indigo-50 border-indigo-300 font-bold text-indigo-900"
+                            : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                        }`}
+                      >
+                        {da.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </form>
