@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 4
     SIMILARITY_THRESHOLD: float = 0.12
 
+    # Authentication & JWT Security
+    SECRET_KEY: str = "smart-city-super-secret-jwt-key-2026-academic-project"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
 
 

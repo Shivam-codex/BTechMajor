@@ -22,6 +22,14 @@ export async function fetchApi(endpoint, options = {}) {
     "Accept": "application/json",
   };
 
+  // Attach JWT Bearer token if present in browser storage
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("smartcity_auth_token");
+    if (token) {
+      defaultHeaders["Authorization"] = `Bearer ${token}`;
+    }
+  }
+
   // Do not set Content-Type if options.body is FormData (browser will set multipart boundary automatically)
   if (!(options.body instanceof FormData)) {
     defaultHeaders["Content-Type"] = "application/json";

@@ -5,8 +5,56 @@ Protects against XSS vectors, path traversal, malicious filenames, and oversized
 
 import html
 import re
-from typing import Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Tuple, Optional, Dict, Any
+import jwt
+from backend.app.core.config import settings
 from backend.app.utils.constants import MAX_UPLOAD_SIZE_BYTES, ALLOWED_FILE_EXTENSIONS
+
+# Compatibility patch for bcrypt version attribute check in passlib
+import bcrypt
+if not hasattr(bcrypt, "__about__"):
+    bcrypt.__about__ = type("About", (), {"__version__": getattr(bcrypt, "__version__", "4.0.0")})()
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def hash_password(password: str) -> str:
+    """Generate secure bcrypt hash from plaintext password."""
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify plaintext password against stored bcrypt hash."""
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+def create_access_token(data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+    """
+    Creates a signed HS256 JWT access token.
+    Claims typically include: sub (email), id, role, department.
+    """
+    to_encode = data.copy()
+    now = datetime.now(timezone.utc)
+    if expires_delta:
+        expire = now + expires_delta
+    else:
+        expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire, "iat": now})
+    return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_access_token(token: str) -> Optional[Dict[str, Any]]:
+    """
+    Decodes and validates a JWT token using SECRET_KEY and HS256.
+    Returns payload dictionary or None if signature is invalid/expired.
+    """
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        return payload
+    except jwt.PyJWTError:
+        return None
 
 # Script tags and potentially dangerous HTML attributes
 SCRIPT_TAG_REGEX = re.compile(r"<\s*script[^>]*>.*?<\s*/\s*script\s*>", re.IGNORECASE | re.DOTALL)

@@ -11,6 +11,7 @@ from sqlalchemy import or_
 
 from backend.app.core.database import get_db
 from backend.app.models.complaint import Complaint
+from backend.app.models.user import User
 from backend.app.models.base import utc_now
 from backend.app.schemas.complaint_schema import (
     ComplaintCreate,
@@ -25,6 +26,11 @@ from backend.app.services.complaint_processing_service import (
 )
 from backend.app.core.security import sanitize_text_input, validate_upload_content
 from backend.app.utils.constants import ComplaintStatus
+from backend.app.api.deps import (
+    get_current_user,
+    get_optional_current_user,
+    get_current_admin,
+)
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
 
@@ -39,11 +45,13 @@ async def upload_complaint_document(
     file: UploadFile = File(..., description="Complaint document (PDF, DOCX, TXT) up to 10 MB"),
     citizen_name: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Accepts complaint files, extracts text, runs deterministic NLP classification,
     assigns department, detects priority, and saves record to SQLite.
+    Attaches user_id if authenticated.
     """
     file_bytes = await file.read()
     filename = file.filename or "uploaded_complaint.txt"
@@ -53,7 +61,7 @@ async def upload_complaint_document(
     if not is_valid:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
 
-    clean_name = sanitize_text_input(citizen_name) if citizen_name else None
+    clean_name = sanitize_text_input(citizen_name) if citizen_name else (current_user.full_name if current_user else None)
     clean_loc = sanitize_text_input(location) if location else None
 
     try:
@@ -63,6 +71,7 @@ async def upload_complaint_document(
             file_bytes=file_bytes,
             citizen_name=clean_name,
             location=clean_loc,
+            user_id=current_user.id if current_user else None,
         )
         return complaint
     except ComplaintProcessingError as e:
@@ -79,14 +88,16 @@ async def upload_complaint_document(
 )
 def submit_complaint(
     payload: ComplaintCreate,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Accepts raw grievance text, runs NLP preprocessing, rule-based classification,
     priority detection, department routing, and stores to database.
+    Attaches user_id if authenticated.
     """
     clean_text = sanitize_text_input(payload.complaint_text)
-    clean_name = sanitize_text_input(payload.citizen_name) if payload.citizen_name else None
+    clean_name = sanitize_text_input(payload.citizen_name) if payload.citizen_name else (current_user.full_name if current_user else None)
     clean_loc = sanitize_text_input(payload.location) if payload.location else None
 
     if len(clean_text) < 5:
@@ -104,6 +115,7 @@ def submit_complaint(
             source_type=payload.source_type.value,
             source_file_name=payload.source_file_name,
             extracted_text=payload.extracted_text,
+            user_id=current_user.id if current_user else None,
         )
         return complaint
     except ComplaintProcessingError as e:
@@ -115,7 +127,7 @@ def submit_complaint(
 @router.get(
     "",
     response_model=ComplaintListResponse,
-    summary="List complaints with search and filters",
+    summary="List complaints with search, filters, and role-based segregation",
 )
 def list_complaints(
     page: int = Query(1, ge=1),
@@ -125,13 +137,24 @@ def list_complaints(
     priority: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     search: Optional[str] = Query(None),
+    my_only: bool = Query(False, description="Filter complaints submitted by current user"),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Retrieves paginated complaints with filtering across category, department,
-    priority, lifecycle status, and keyword search.
+    Retrieves paginated complaints with role-based filtering:
+    - CITIZEN: Strictly views ONLY their own submitted grievances (WHERE user_id == current_user.id).
+    - ADMIN: Views all complaints across municipal departments (or scoped to their department).
     """
     query = db.query(Complaint)
+
+    # Role-Based Data Segregation
+    if current_user.role == "CITIZEN" or my_only:
+        query = query.filter(Complaint.user_id == current_user.id)
+    elif current_user.role == "ADMIN":
+        # Scoped view for specific departmental administrators if no explicit filter is given
+        if current_user.department and current_user.department != "General Grievance Cell" and not department:
+            query = query.filter(Complaint.department == current_user.department)
 
     if category:
         query = query.filter(Complaint.category == category)
@@ -172,24 +195,38 @@ def list_complaints(
 )
 def get_complaint(
     complaint_id: str,
+    current_user: Optional[User] = Depends(get_optional_current_user),
     db: Session = Depends(get_db),
 ):
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Complaint '{complaint_id}' not found.")
+
+    # Guard: Citizen cannot inspect other citizens' complaints
+    if current_user and current_user.role == "CITIZEN" and complaint.user_id is not None and complaint.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: You can only view your own submitted grievances.",
+        )
+
     return complaint
 
 
 @router.put(
     "/{complaint_id}",
     response_model=ComplaintResponse,
-    summary="Update complaint status, department, priority, or resolution notes",
+    summary="Update complaint status, department, priority, or resolution notes (Admin Only)",
 )
 def update_complaint(
     complaint_id: str,
     payload: ComplaintUpdate,
+    current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    """
+    Updates complaint status, reassignment, or resolution.
+    STRICTLY RESTRICTED TO MUNICIPAL ADMINISTRATORS.
+    """
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Complaint '{complaint_id}' not found.")
@@ -217,12 +254,17 @@ def update_complaint(
 @router.delete(
     "/{complaint_id}",
     status_code=status.HTTP_200_OK,
-    summary="Delete a complaint record",
+    summary="Delete a complaint record (Admin Only)",
 )
 def delete_complaint(
     complaint_id: str,
+    current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    """
+    Removes a complaint record.
+    STRICTLY RESTRICTED TO MUNICIPAL ADMINISTRATORS.
+    """
     complaint = db.query(Complaint).filter(Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Complaint '{complaint_id}' not found.")

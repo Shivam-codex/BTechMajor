@@ -9,6 +9,8 @@ from sqlalchemy import func
 
 from backend.app.core.database import get_db
 from backend.app.models.complaint import Complaint
+from backend.app.models.user import User
+from backend.app.api.deps import get_current_admin
 from backend.app.schemas.dashboard_schema import (
     DashboardStatsResponse,
     CategoryDistribution,
@@ -24,11 +26,15 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 @router.get(
     "/stats",
     response_model=DashboardStatsResponse,
-    summary="Get aggregated statistics and chart distributions for Admin Dashboard",
+    summary="Get aggregated statistics and chart distributions for Admin Dashboard (Admin Only)",
 )
-def get_dashboard_stats(db: Session = Depends(get_db)):
+def get_dashboard_stats(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
     """
-    Computes key performance indicators (KPIs) and category/department/priority/status distributions.
+    Computes key performance indicators (KPIs) and distributions.
+    STRICTLY RESTRICTED TO MUNICIPAL ADMINISTRATORS.
     """
     total = db.query(func.count(Complaint.id)).scalar() or 0
 

@@ -6,7 +6,8 @@ priority detection, and administrative lifecycle status.
 
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, Float, JSON, DateTime
+from sqlalchemy import Column, String, Text, Float, JSON, DateTime, Integer, ForeignKey
+from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
 from backend.app.models.base import TimestampMixin, utc_now
 from backend.app.utils.constants import (
@@ -54,11 +55,15 @@ class Complaint(Base, TimestampMixin):
     priority = Column(String(32), default=ComplaintPriority.MEDIUM.value, nullable=False, index=True)
     priority_reason = Column(Text, nullable=True)
 
-    # Administrative Tracking
+    # Administrative Tracking & Authentication
     status = Column(String(32), default=ComplaintStatus.SUBMITTED.value, nullable=False, index=True)
     citizen_name = Column(String(128), nullable=True)
     location = Column(String(255), nullable=True)
     resolution_notes = Column(Text, nullable=True)
+
+    # Optional foreign key to registered user
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user = relationship("User", back_populates="complaints")
 
     # Lifecycle Timestamps
     assigned_at = Column(DateTime, nullable=True)
@@ -68,6 +73,7 @@ class Complaint(Base, TimestampMixin):
         """Convert model record to dictionary representation."""
         return {
             "id": self.id,
+            "user_id": self.user_id,
             "complaint_text": self.complaint_text,
             "extracted_text": self.extracted_text,
             "source_file_name": self.source_file_name,

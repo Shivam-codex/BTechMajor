@@ -12,6 +12,7 @@ from pypdf import PdfWriter
 
 from backend.app.core.database import Base
 from backend.app.models.complaint import Complaint
+from backend.app.models.user import User
 
 
 from sqlalchemy.pool import StaticPool

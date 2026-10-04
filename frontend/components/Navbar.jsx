@@ -8,19 +8,44 @@ import {
   LayoutDashboard, 
   Bot, 
   BookOpen, 
-  ShieldCheck 
+  ShieldCheck,
+  User,
+  LogOut,
+  LogIn,
+  UserPlus,
+  FolderOpen
 } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { user, isAuthenticated, isCitizen, isAdmin, logout } = useAuth();
 
-  const navItems = [
+  // Dynamic Navigation Items based on authentication role
+  let navItems = [
     { name: "Overview", href: "/", icon: Building2 },
     { name: "Submit Grievance", href: "/complaints", icon: FileText },
-    { name: "Admin Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Municipal Assistant", href: "/assistant", icon: Bot },
     { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
   ];
+
+  if (isAuthenticated) {
+    if (isCitizen) {
+      navItems = [
+        { name: "My Complaints", href: "/complaints/my", icon: FolderOpen },
+        { name: "Submit Grievance", href: "/complaints", icon: FileText },
+        { name: "Municipal Assistant", href: "/assistant", icon: Bot },
+        { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
+      ];
+    } else if (isAdmin) {
+      navItems = [
+        { name: "Admin Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Lodge Intake", href: "/complaints", icon: FileText },
+        { name: "Municipal Assistant", href: "/assistant", icon: Bot },
+        { name: "Knowledge Base", href: "/knowledge-base", icon: BookOpen },
+      ];
+    }
+  }
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
@@ -56,7 +81,7 @@ export default function Navbar() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                     isActive
                       ? "bg-blue-50 text-blue-700 font-semibold"
                       : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
@@ -68,6 +93,59 @@ export default function Navbar() {
               );
             })}
           </nav>
+
+          {/* Auth Controls & Profile Pill */}
+          <div className="flex items-center gap-2">
+            {isAuthenticated ? (
+              <div className="flex items-center gap-2.5">
+                {/* User Info Badge */}
+                <div className={`hidden md:flex items-center gap-2 px-3 py-1 rounded-xl border text-xs ${
+                  isAdmin 
+                    ? "bg-indigo-50 border-indigo-200 text-indigo-900" 
+                    : "bg-blue-50 border-blue-200 text-blue-900"
+                }`}>
+                  {isAdmin ? (
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                  ) : (
+                    <User className="w-3.5 h-3.5 text-blue-600" />
+                  )}
+                  <div className="text-left">
+                    <span className="font-bold block leading-tight">{user?.full_name}</span>
+                    <span className="text-[10px] text-slate-500 block leading-tight">
+                      {isAdmin ? `Admin: ${user?.department || "General"}` : "Citizen"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Logout Button */}
+                <button
+                  onClick={logout}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all shadow-sm"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5 text-slate-500" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/login"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-all"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Sign In</span>
+                </Link>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs shadow-sm shadow-blue-500/20 transition-all"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Register</span>
+                </Link>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>

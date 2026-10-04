@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { 
   UploadCloud, 
@@ -14,15 +14,24 @@ import {
   Eye, 
   FileCode,
   Tag,
-  Clock
+  Clock,
+  UserCheck
 } from "lucide-react";
 import API_BASE_URL, { fetchApi } from "../../utils/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function CitizenComplaintPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("manual"); // "manual" or "upload"
   const [complaintText, setComplaintText] = useState("");
   const [citizenName, setCitizenName] = useState("");
   const [location, setLocation] = useState("");
+
+  useEffect(() => {
+    if (user?.full_name && !citizenName) {
+      setCitizenName(user.full_name);
+    }
+  }, [user]);
   
   // File upload state
   const [selectedFile, setSelectedFile] = useState(null);
@@ -192,13 +201,24 @@ export default function CitizenComplaintPage() {
               </div>
             </div>
 
-            <Link
-              href={`/complaints/${result.id}`}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors"
-            >
-              <span>Track Grievance</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
+            <div className="flex items-center gap-2">
+              {user && (
+                <Link
+                  href="/complaints/my"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-semibold transition-colors"
+                >
+                  <span>My Grievances</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </Link>
+              )}
+              <Link
+                href={`/complaints/${result.id}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition-colors"
+              >
+                <span>Track Grievance</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
           </div>
 
           {/* Explainability Grid */}
@@ -257,6 +277,32 @@ export default function CitizenComplaintPage() {
 
       {/* Main Form */}
       <form onSubmit={handleSubmit} className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        {user ? (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span>
+                Lodging as <strong className="font-semibold">{user.full_name}</strong> ({user.email}). 
+                This grievance will be automatically linked to your citizen account.
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Submitting as <strong>Guest</strong>. Have an account?{" "}
+              <Link href="/login" className="text-blue-600 font-semibold hover:underline">
+                Sign In
+              </Link>{" "}
+              or{" "}
+              <Link href="/register" className="text-blue-600 font-semibold hover:underline">
+                Register
+              </Link>{" "}
+              to track all grievances in your citizen dashboard.
+            </span>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">Citizen Name (Optional)</label>

@@ -38,7 +38,19 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db():
-    """Create all database tables on application startup."""
+    """Create all database tables on application startup and ensure schema migrations."""
     # Import models here to ensure they are registered with Base.metadata
-    from backend.app.models import complaint  # noqa: F401
+    from backend.app.models import user, complaint  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+    # Automatic column migration for existing SQLite databases
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("PRAGMA table_info(complaints)"))
+            cols = [row[1] for row in result.fetchall()]
+            if cols and "user_id" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN user_id INTEGER REFERENCES users(id)"))
+                conn.commit()
+    except Exception:
+        pass

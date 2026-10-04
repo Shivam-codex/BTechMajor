@@ -11,6 +11,10 @@ from backend.app.main import app
 from backend.app.core.database import get_db
 
 
+from backend.app.core.security import hash_password, create_access_token
+from backend.app.models.user import User
+
+
 @pytest.fixture(scope="module")
 def client(test_db_engine):
     """Provides a TestClient using in-memory SQLite database override."""
@@ -29,6 +33,29 @@ def client(test_db_engine):
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="module")
+def admin_token(test_db_engine):
+    """Generates an administrative bearer token for integration tests."""
+    from sqlalchemy.orm import sessionmaker
+
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_db_engine)
+    db = TestingSessionLocal()
+    admin_user = User(
+        id=999,
+        full_name="Test Administrator",
+        email="test_admin@smartcity.gov",
+        hashed_password=hash_password("Admin@123"),
+        role="ADMIN",
+        department="General Grievance Cell",
+        is_active=True,
+    )
+    db.merge(admin_user)
+    db.commit()
+    token = create_access_token({"sub": admin_user.email, "id": admin_user.id, "role": "ADMIN"})
+    db.close()
+    return token
 
 
 def test_health_check(client):
@@ -72,16 +99,17 @@ def test_document_upload_complaint(client, sample_txt_bytes):
     assert res_data["source_file_name"] == "urgent_pipeline_leak.txt"
 
 
-def test_list_complaints_and_filtering(client):
-    # Retrieve all
-    response = client.get("/api/complaints?page=1&limit=10")
+def test_list_complaints_and_filtering(client, admin_token):
+    # Retrieve all using admin credentials
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.get("/api/complaints?page=1&limit=10", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] >= 2
     assert len(data["items"]) >= 2
 
     # Filter by category
-    cat_response = client.get("/api/complaints?category=Road/Pothole")
+    cat_response = client.get("/api/complaints?category=Road/Pothole", headers=headers)
     assert cat_response.status_code == 200
     cat_data = cat_response.json()
     assert all(item["category"] == "Road/Pothole" for item in cat_data["items"])
@@ -107,7 +135,8 @@ def test_get_single_complaint_detail(client):
     assert "classification_reason" in data
 
 
-def test_update_complaint_lifecycle(client):
+def test_update_complaint_lifecycle(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
     # Create complaint
     create_res = client.post(
         "/api/complaints",
@@ -120,21 +149,22 @@ def test_update_complaint_lifecycle(client):
         "status": "In Progress",
         "resolution_notes": "Inspection crew dispatched with jetting machine.",
     }
-    put_res = client.put(f"/api/complaints/{cid}", json=update_payload)
+    put_res = client.put(f"/api/complaints/{cid}", json=update_payload, headers=headers)
     assert put_res.status_code == 200
     assert put_res.json()["status"] == "In Progress"
     assert "jetting machine" in put_res.json()["resolution_notes"]
 
     # Resolve
     resolve_payload = {"status": "Resolved"}
-    resolve_res = client.put(f"/api/complaints/{cid}", json=resolve_payload)
+    resolve_res = client.put(f"/api/complaints/{cid}", json=resolve_payload, headers=headers)
     assert resolve_res.status_code == 200
     assert resolve_res.json()["status"] == "Resolved"
     assert resolve_res.json()["resolved_at"] is not None
 
 
-def test_dashboard_stats(client):
-    response = client.get("/api/dashboard/stats")
+def test_dashboard_stats(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    response = client.get("/api/dashboard/stats", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total_complaints"] >= 3

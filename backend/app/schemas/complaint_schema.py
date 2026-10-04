@@ -33,6 +33,7 @@ class ComplaintUpdate(BaseModel):
 
 class ComplaintResponse(BaseModel):
     id: str
+    user_id: Optional[int] = None
     complaint_text: str
     extracted_text: Optional[str] = None
     source_file_name: Optional[str] = None

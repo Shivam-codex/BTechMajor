@@ -26,7 +26,7 @@ from backend.app.core.config import settings
 from backend.app.core.database import init_db
 from backend.app.core.logging import logger
 from backend.app.services.retrieval.ranking import initialize_retriever_if_needed
-from backend.app.api import complaints, dashboard, assistant, knowledge_base
+from backend.app.api import complaints, dashboard, assistant, knowledge_base, auth
 
 
 @asynccontextmanager
@@ -101,6 +101,7 @@ def health_check():
 
 
 # Include Modular Routers under /api
+app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(complaints.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(assistant.router, prefix=settings.API_V1_STR)

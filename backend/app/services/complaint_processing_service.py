@@ -36,6 +36,7 @@ def process_complaint_pipeline(
     source_type: str = SourceType.MANUAL.value,
     source_file_name: Optional[str] = None,
     extracted_text: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> Complaint:
     """
     Executes complete deterministic processing on complaint text and persists record.
@@ -64,6 +65,7 @@ def process_complaint_pipeline(
     # 6. Build and persist Complaint model
     complaint = Complaint(
         id=generate_complaint_id(),
+        user_id=user_id,
         complaint_text=clean_text,
         extracted_text=extracted_text,
         source_file_name=source_file_name,
@@ -89,6 +91,7 @@ def process_complaint_pipeline(
 
     log_event("COMPLAINT_PROCESSED", {
         "id": complaint.id,
+        "user_id": complaint.user_id,
         "category": complaint.category,
         "score": complaint.rule_match_score,
         "priority": complaint.priority,
@@ -105,6 +108,7 @@ def process_document_complaint(
     file_bytes: bytes,
     citizen_name: Optional[str] = None,
     location: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> Complaint:
     """
     Handles file upload: extracts text -> executes complaint pipeline -> saves to DB.
@@ -121,4 +125,5 @@ def process_document_complaint(
         source_type=extraction_res.source_type,
         source_file_name=extraction_res.source_file_name,
         extracted_text=extraction_res.cleaned_text,
+        user_id=user_id,
     )
