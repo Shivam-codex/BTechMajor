@@ -38,7 +38,17 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 4
     SIMILARITY_THRESHOLD: float = 0.12
 
-    # Generative AI & Gemini API configuration
+    # Local Open-Source Vision (Ollama + Gemma 3 Vision)
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_VISION_MODEL: str = "gemma3:4b"
+    OLLAMA_TIMEOUT_SECONDS: float = 25.0
+
+    # Local Open-Source Speech Recognition (Faster-Whisper)
+    WHISPER_MODEL_SIZE: str = "base"
+    WHISPER_DEVICE: str = "cpu"
+    WHISPER_COMPUTE_TYPE: str = "int8"
+
+    # Generative AI & Gemini API configuration (Optional for assistant)
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-2.5-flash"
 

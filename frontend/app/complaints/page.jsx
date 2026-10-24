@@ -36,15 +36,16 @@ import API_BASE_URL, { fetchApi } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
-const AUDIO_EXTS = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"];
+const AUDIO_EXTS = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".mp4"];
 const DOC_EXTS = [".pdf", ".docx", ".txt"];
 const ALL_VALID_EXTS = [...IMAGE_EXTS, ...AUDIO_EXTS, ...DOC_EXTS];
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 const PRIORITY_ORDER = {
-  Critical: 4,
-  High: 3,
-  Medium: 2,
+  Critical: 5,
+  High: 4,
+  Medium: 3,
+  "Review Required": 2,
   Low: 1,
 };
 
@@ -58,7 +59,7 @@ function classifyFileKind(file) {
   if (IMAGE_EXTS.includes(ext) || (file?.type && file.type.startsWith("image/"))) {
     return "image";
   }
-  if (AUDIO_EXTS.includes(ext) || (file?.type && file.type.startsWith("audio/"))) {
+  if (AUDIO_EXTS.includes(ext) || (file?.type && (file.type.startsWith("audio/") || file.type === "video/mp4"))) {
     return "audio";
   }
   if (DOC_EXTS.includes(ext)) {
@@ -828,6 +829,7 @@ export default function CitizenComplaintPage() {
     High: "bg-amber-100 text-amber-800 border-amber-200",
     Medium: "bg-blue-100 text-blue-800 border-blue-200",
     Low: "bg-slate-100 text-slate-700 border-slate-200",
+    "Review Required": "bg-purple-100 text-purple-800 border-purple-200",
   };
 
   if (authLoading) {
@@ -1267,6 +1269,7 @@ export default function CitizenComplaintPage() {
                           <option value="High">High Priority</option>
                           <option value="Medium">Medium Priority</option>
                           <option value="Low">Low Priority</option>
+                          <option value="Review Required">Review Required</option>
                         </select>
                       </div>
 

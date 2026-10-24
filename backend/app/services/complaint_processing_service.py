@@ -22,6 +22,7 @@ from backend.app.services.classification.priority_detector import detect_priorit
 from backend.app.utils.constants import (
     SourceType,
     ComplaintStatus,
+    ComplaintPriority,
     IMAGE_EXTENSIONS,
     AUDIO_EXTENSIONS,
     DOCUMENT_EXTENSIONS,
@@ -58,6 +59,9 @@ def process_complaint_pipeline(
     visual_priority: Optional[str] = None,
     complaint_id: Optional[str] = None,
     attachments: Optional[List[Dict[str, Any]]] = None,
+    visual_evidence: Optional[Dict[str, Any]] = None,
+    audio_evidence: Optional[Dict[str, Any]] = None,
+    citizen_text: Optional[str] = None,
 ) -> Complaint:
     """
     Executes complete deterministic processing on complaint text and persists record.
@@ -75,12 +79,20 @@ def process_complaint_pipeline(
     # 3. Automatic Department Assignment
     department, routing_reason = assign_department(classification.category)
 
-    # 4. Deterministic Priority Detection (with visual/audio evidence integration)
-    priority_res = detect_priority(nlp_result, visual_priority=visual_priority)
+    # 4. Deterministic Priority Detection (with multimodal visual & audio context)
+    priority_res = detect_priority(
+        nlp_result,
+        visual_priority=visual_priority,
+        visual_evidence=visual_evidence,
+        audio_evidence=audio_evidence,
+        citizen_text=citizen_text,
+    )
 
-    # 5. Determine initial status
+    # 5. Determine initial status: if priority is Review Required, mark Needs Review
     initial_status = classification.status
-    if initial_status == ComplaintStatus.CLASSIFIED.value:
+    if priority_res.priority == ComplaintPriority.REVIEW_REQUIRED.value:
+        initial_status = ComplaintStatus.NEEDS_REVIEW.value
+    elif initial_status == ComplaintStatus.CLASSIFIED.value:
         initial_status = ComplaintStatus.ASSIGNED.value
 
     # 6. Build and persist Complaint model
@@ -168,6 +180,8 @@ def process_multimodal_complaint(
     highest_multimodal_priority: Optional[str] = None
     exif_gps_location: Optional[str] = None
     spoken_audio_location: Optional[str] = None
+    primary_visual_meta: Optional[Dict[str, Any]] = None
+    primary_audio_meta: Optional[Dict[str, Any]] = None
 
     transcripts_map = audio_transcripts or {}
 
@@ -201,6 +215,12 @@ def process_multimodal_complaint(
         meta = extraction_res.metadata or {}
         cleaned_content = extraction_res.cleaned_text
 
+        # Track primary metadata for visual and audio evidence
+        if ext in IMAGE_EXTENSIONS and primary_visual_meta is None:
+            primary_visual_meta = meta
+        if ext in AUDIO_EXTENSIONS and primary_audio_meta is None:
+            primary_audio_meta = meta
+
         # Track location hints from Image EXIF GPS and Audio transcription
         if meta.get("has_gps") and meta.get("location_name") and not exif_gps_location:
             exif_gps_location = meta["location_name"]
@@ -231,6 +251,7 @@ def process_multimodal_complaint(
             "source_type": extraction_res.source_type,
             "media_category": media_category,
             "extracted_text": cleaned_content,
+            "metadata": meta,
             "url": f"/api/complaints/{cid}/attachment?index={idx}",
         })
 
@@ -285,6 +306,16 @@ def process_multimodal_complaint(
 
     primary_attachment = attachments_list[0]
 
+    citizen_statements = []
+    if complaint_text and complaint_text.strip():
+        citizen_statements.append(complaint_text.strip())
+    for att in attachments_list:
+        if att.get("source_type") == "AUDIO" and att.get("metadata", {}).get("transcription"):
+            t = att["metadata"]["transcription"]
+            if t and t not in citizen_statements:
+                citizen_statements.append(t)
+    effective_citizen_text = " ".join(citizen_statements) if citizen_statements else complaint_text
+
     return process_complaint_pipeline(
         db=db,
         complaint_id=cid,
@@ -298,6 +329,9 @@ def process_multimodal_complaint(
         user_id=user_id,
         visual_priority=highest_multimodal_priority,
         attachments=attachments_list,
+        visual_evidence=primary_visual_meta,
+        audio_evidence=primary_audio_meta,
+        citizen_text=effective_citizen_text,
     )
 
 

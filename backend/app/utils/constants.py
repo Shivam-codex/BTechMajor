@@ -34,6 +34,16 @@ class ComplaintPriority(str, Enum):
     MEDIUM = "Medium"
     HIGH = "High"
     CRITICAL = "Critical"
+    REVIEW_REQUIRED = "Review Required"
+
+
+PRIORITY_RANK = {
+    ComplaintPriority.LOW.value: 1,
+    ComplaintPriority.REVIEW_REQUIRED.value: 2,
+    ComplaintPriority.MEDIUM.value: 3,
+    ComplaintPriority.HIGH.value: 4,
+    ComplaintPriority.CRITICAL.value: 5,
+}
 
 
 class ComplaintStatus(str, Enum):
@@ -72,7 +82,7 @@ CATEGORY_DEPARTMENT_MAPPING = {
 # File Upload Configuration
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
-AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".mp4"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt"}
 ALLOWED_FILE_EXTENSIONS = IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | DOCUMENT_EXTENSIONS
 ALLOWED_MIME_TYPES = {
@@ -88,6 +98,7 @@ ALLOWED_MIME_TYPES = {
     "audio/ogg",
     "audio/webm",
     "audio/aac",
+    "video/mp4",
     "image/jpeg",
     "image/png",
     "image/webp",

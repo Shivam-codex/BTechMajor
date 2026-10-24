@@ -1,20 +1,23 @@
 """
-Image Grievance Extractor and Visual Inspector.
-Extracts:
-1. EXIF GPS coordinates and resolves location via reverse-geocoding.
-2. Visual scene analysis and civic hazard detection for deterministic priority prediction.
-Uses Google GenAI SDK (gemini-2.5-flash) multimodal inspection when GEMINI_API_KEY is configured,
-with robust local Pillow EXIF and metadata fallback when offline or without API key.
+Local-First Image Grievance Extractor and Visual Inspector.
+Architecture:
+1. Camera EXIF Metadata: GPS coordinate extraction & reverse-geocoding.
+2. Local Vision AI: Ollama with Gemma 3 Vision (gemma3:4b) for zero-cost, private incident scene inspection.
+3. Robust Offline Fallback: OpenCV & Pillow computer vision (Laplacian blur detection, luminance, texture & color metrics).
+4. No external paid vision API dependencies. Does not invent GPS or injuries from pixels alone.
 """
 
-import os
 import io
 import json
+import base64
 import logging
 import urllib.request
 from pathlib import Path
 from typing import Tuple, List, Dict, Any, Optional
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageStat, ImageFilter
+import cv2
+import numpy as np
+
 from backend.app.core.config import settings
 
 logger = logging.getLogger("smart_city_backend")
@@ -45,16 +48,16 @@ def _dms_to_decimal(dms, ref: Optional[str]) -> Optional[float]:
         return None
 
 
-def reverse_geocode(lat: float, lon: float, timeout_sec: float = 2.5) -> str:
+def reverse_geocode(lat: float, lon: float, timeout_sec: float = 1.5) -> str:
     """
     Reverse-geocodes GPS coordinates to human-readable address using OpenStreetMap Nominatim.
-    Falls back cleanly to coordinate string if network request fails or times out.
+    Uses strict 1.5s timeout; falls back cleanly to coordinate string if offline or unreachable.
     """
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "SmartCityComplaintSystem/1.0 (academic-project)"}
+            headers={"User-Agent": "SmartCityComplaintSystem/1.0 (local-academic-project)"}
         )
         with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -62,7 +65,7 @@ def reverse_geocode(lat: float, lon: float, timeout_sec: float = 2.5) -> str:
             if display_name:
                 return display_name
     except Exception as exc:
-        logger.debug("Reverse geocoding timed out or failed: %s", exc)
+        logger.debug("Reverse geocoding timed out or offline: %s", exc)
 
     return f"Lat: {lat:.5f}, Lon: {lon:.5f}"
 
@@ -92,12 +95,11 @@ def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:
             result["width"], result["height"] = img.size
             result["format"] = img.format or "JPEG"
 
-            # 1. Try modern Pillow IFD extraction
+            # IFD extraction
             exif = img.getexif() if hasattr(img, "getexif") else None
             gps_info = {}
 
             if exif is not None:
-                # 0x8825 is ExifTags.IFD.GPSInfo
                 try:
                     gps_ifd = exif.get_ifd(0x8825)
                     if gps_ifd:
@@ -105,12 +107,10 @@ def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-                # Camera Make / Model / DateTime
-                result["camera_make"] = exif.get(271)  # Make
-                result["camera_model"] = exif.get(272)  # Model
-                result["date_time"] = exif.get(306)    # DateTime
+                result["camera_make"] = exif.get(271)
+                result["camera_model"] = exif.get(272)
+                result["date_time"] = exif.get(306)
 
-            # 2. Fallback to legacy _getexif()
             if not gps_info and hasattr(img, "_getexif"):
                 legacy_exif = img._getexif()
                 if legacy_exif:
@@ -120,9 +120,6 @@ def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:
                             gps_info = val
                             break
 
-            # 3. Resolve Lat / Long
-            # Tag 1: GPSLatitudeRef, Tag 2: GPSLatitude, Tag 3: GPSLongitudeRef, Tag 4: GPSLongitude
-            # Or by name if keyed by name
             lat_raw = gps_info.get(2) or gps_info.get("GPSLatitude")
             lat_ref = gps_info.get(1) or gps_info.get("GPSLatitudeRef")
             lon_raw = gps_info.get(4) or gps_info.get("GPSLongitude")
@@ -138,58 +135,149 @@ def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:
                     result["longitude"] = lon
                     result["location_name"] = reverse_geocode(lat, lon)
     except Exception as exc:
-        logger.warning("Error reading image EXIF data: %s", exc)
+        logger.debug("Error reading image EXIF: %s", exc)
 
     return result
 
 
-def _analyze_image_pixels(file_bytes: bytes) -> Dict[str, Any]:
+# -------------------------------------------------------------------------
+# Ollama + Gemma 3 Vision Client
+# -------------------------------------------------------------------------
+
+def query_ollama_vision(file_bytes: bytes, filename: str) -> Optional[Dict[str, Any]]:
     """
-    Local computer-vision inspection using Pillow to extract image metrics:
-    - Luminance / average brightness (dark street / night light failure)
-    - Edge density and gradient roughness (potholes, road craters, cracked pavement, debris heaps)
-    - Color distribution & saturation (electrical hazard sparks, fire, waste)
+    Queries local Ollama server running Gemma 3 Vision (e.g. gemma3:4b).
+    Extracts structured factual observations:
+    - incident_type
+    - visible_hazards
+    - apparent_damage (none, minor, moderate, severe)
+    - severity_hint (Critical, High, Medium, Low, Review Required)
+    - description
+    - confidence (0.0 to 1.0)
+    - uncertainty_indicators
+    Returns None if Ollama is unreachable, times out, or output is malformed.
+    """
+    if not file_bytes or len(file_bytes) < 32:
+        return None
+
+    try:
+        import httpx
+
+        base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        api_url = f"{base_url}/api/generate"
+        b64_image = base64.b64encode(file_bytes).decode("utf-8")
+
+        prompt = (
+            "You are an expert Smart City Municipal Field Inspector. Analyze this civic incident photograph thoroughly.\n"
+            "Report physical evidence factually. DO NOT invent injuries, financial loss, or invisible internal damage.\n"
+            "Respond ONLY with a valid JSON object matching this schema:\n"
+            "{\n"
+            '  "incident_type": "Road/Pothole" | "Street Light" | "Garbage/Waste Management" | "Water Supply" | "Drainage/Sewerage" | "Electricity" | "Public Toilet" | "Traffic" | "Other" | "Clean/No Damage",\n'
+            '  "visible_hazards": ["list", "of", "physically", "visible", "hazards"],\n'
+            '  "apparent_damage": "none" | "minor" | "moderate" | "severe",\n'
+            '  "severity_hint": "Critical" | "High" | "Medium" | "Low" | "Review Required",\n'
+            '  "description": "Factual description of physical damage and physical obstruction visible in the image.",\n'
+            '  "confidence": 0.85,\n'
+            '  "uncertainty_indicators": ["blur", "glare", "obstruction", "ambiguous_scene"]\n'
+            "}"
+        )
+
+        payload = {
+            "model": settings.OLLAMA_VISION_MODEL,
+            "prompt": prompt,
+            "images": [b64_image],
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.1,
+                "num_predict": 256,
+            }
+        }
+
+        with httpx.Client(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
+            resp = client.post(api_url, json=payload)
+            if resp.status_code == 200:
+                raw_json = resp.json().get("response", "{}")
+                data = json.loads(raw_json)
+                if isinstance(data, dict) and "incident_type" in data:
+                    return {
+                        "incident_type": str(data.get("incident_type", "Other")),
+                        "visible_hazards": list(data.get("visible_hazards", [])),
+                        "apparent_damage": str(data.get("apparent_damage", "moderate")).lower(),
+                        "severity_hint": str(data.get("severity_hint", "Medium")),
+                        "description": str(data.get("description", "")),
+                        "confidence": float(data.get("confidence", 0.85)),
+                        "uncertainty_indicators": list(data.get("uncertainty_indicators", [])),
+                        "vision_source": "ollama_gemma3",
+                    }
+    except Exception as exc:
+        logger.debug("Ollama Gemma 3 Vision query skipped/failed (%s): %s", type(exc).__name__, exc)
+
+    return None
+
+
+# -------------------------------------------------------------------------
+# OpenCV & Pillow Local Computer Vision Fallback
+# -------------------------------------------------------------------------
+
+def analyze_image_local_cv(file_bytes: bytes, filename: str) -> Dict[str, Any]:
+    """
+    Calibrated local computer-vision inspection using Pillow and OpenCV.
+    Evaluates:
+    - Blur / Image focus sharpness (Laplacian variance via OpenCV).
+    - Luminance & dark-scene detection (low lux Street Light outage).
+    - Color saturation for intense sparking wire / fire cues.
+    - Surface edge roughness (calibrated texture analysis, avoiding false Highs on normal asphalt).
     """
     features: Dict[str, Any] = {
-        "luminance": 128.0,
-        "edge_density": 0.0,
-        "is_dark": False,
-        "has_high_edges": False,
-        "hazard_color": False,
-        "detected_priority": "Medium",
-        "category_hint": "Other",
-        "hazard_markers": [],
-        "visual_summary": "",
+        "incident_type": "Other",
+        "visible_hazards": [],
+        "apparent_damage": "minor",
+        "severity_hint": "Medium",
+        "description": "",
+        "confidence": 0.70,
+        "uncertainty_indicators": [],
+        "vision_source": "local_cv_fallback",
     }
+
     if not file_bytes:
+        features["uncertainty_indicators"].append("empty_image_bytes")
+        features["severity_hint"] = "Review Required"
         return features
 
     try:
-        from PIL import ImageFilter, ImageStat
+        # 1. OpenCV Image Quality / Blur Check
+        nparr = np.frombuffer(file_bytes, np.uint8)
+        cv_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if cv_img is not None:
+            gray_cv = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
+            laplacian_var = float(cv2.Laplacian(gray_cv, cv2.CV_64F).var())
+            if laplacian_var < 30.0:
+                features["uncertainty_indicators"].append("image_blurred_or_low_focus")
 
+        # 2. Pillow Luminance & Texture Analysis
         with Image.open(io.BytesIO(file_bytes)) as img:
             rgb_img = img.convert("RGB")
-            # Resize thumbnail for fast deterministic processing (<15ms)
             thumb = rgb_img.resize((160, 160))
             gray = thumb.convert("L")
 
-            # 1. Luminance
+            # Average luminance & RGB channel maxima
             stat_gray = ImageStat.Stat(gray)
             lum = float(stat_gray.mean[0])
-            features["luminance"] = round(lum, 2)
+            stat_rgb = ImageStat.Stat(thumb)
+            max_channel = float(max(stat_rgb.mean[:3]))
 
-            # 2. Edge / texture density (crop 2-pixel border to eliminate filter boundary artifacts)
+            # Edge texture density (with 2-pixel border crop)
             edges = gray.filter(ImageFilter.FIND_EDGES)
             cropped_edges = edges.crop((2, 2, 158, 158))
-            edge_stat = ImageStat.Stat(cropped_edges)
-            edge_density = float(edge_stat.mean[0])
-            features["edge_density"] = round(edge_density, 2)
+            edge_density = float(ImageStat.Stat(cropped_edges).mean[0])
 
-            # 3. Color saturation & hazard tones (red / orange / yellow warning cues)
+            # Pixel color distribution (spark / flame / dark pixels)
             if hasattr(thumb, "get_flattened_data"):
                 pixels = list(thumb.get_flattened_data())
             else:
                 pixels = list(thumb.getdata())
+
             total_px = len(pixels)
             hazard_color_count = 0
             dark_pixels = 0
@@ -197,178 +285,110 @@ def _analyze_image_pixels(file_bytes: bytes) -> Dict[str, Any]:
             for r, g, b in pixels:
                 if r < 40 and g < 40 and b < 40:
                     dark_pixels += 1
-                # Fire / sparks / exposed copper / red warning signs: high R, low B
-                if r > 160 and g < 100 and b < 70:
+                # Fire / sparks / exposed copper: intense red/yellow saturation
+                if (r > 180 and g < 90 and b < 60) or (r > 200 and g > 160 and b < 40):
                     hazard_color_count += 1
-                elif r > 190 and g > 150 and b < 50:  # bright yellow/spark
-                    hazard_color_count += 1
-
-            stat_rgb = ImageStat.Stat(thumb)
-            max_channel = float(max(stat_rgb.mean[:3]))
 
             hazard_ratio = hazard_color_count / float(total_px or 1)
             dark_ratio = dark_pixels / float(total_px or 1)
 
-            # Heuristic decision tree:
-            # A. Critical: Sparking / fire / exposed live wire or high hazard saturation
-            if hazard_ratio > 0.07:
-                features["hazard_color"] = True
-                features["detected_priority"] = "Critical"
-                features["category_hint"] = "Electricity"
-                features["hazard_markers"].append("visual_high_saturation_spark_or_flame_pattern")
-                features["visual_summary"] = (
-                    f"Visual electrical hazard / spark pattern detected ({round(hazard_ratio * 100, 1)}% intense saturation). "
-                    f"Assessed as Critical priority requiring prompt electrical inspection."
-                )
+            # Heuristic decision tree (calibrated to prevent false HIGHs):
+            # A. Critical: Active spark / fire pattern
+            if hazard_ratio > 0.08:
+                features["incident_type"] = "Electricity"
+                features["apparent_damage"] = "severe"
+                features["severity_hint"] = "Critical"
+                features["visible_hazards"].append("visual_spark_or_flame_pattern")
+                features["description"] = "Visible electrical hazard / spark pattern detected from intense color saturation."
 
-            # B. High: Rough cracked road surface / pothole crater / debris heap
-            elif edge_density > 6.0 or (edge_density > 4.5 and lum < 120 and max_channel > 55.0):
-                features["has_high_edges"] = True
-                features["detected_priority"] = "High"
-                features["category_hint"] = "Road/Pothole"
-                features["hazard_markers"].append("visual_road_crater_texture_and_edge_roughness")
-                features["visual_summary"] = (
-                    f"Severe road crater / asphalt surface roughness detected (edge roughness metric: {round(edge_density, 1)}). "
-                    f"Visual priority assessed as High for road and pothole repair."
-                )
+            # B. High: Severe asphalt crater / deep destruction (requires very high edge density > 18)
+            elif edge_density > 18.0:
+                features["incident_type"] = "Road/Pothole"
+                features["apparent_damage"] = "severe"
+                features["severity_hint"] = "High"
+                features["visible_hazards"].append("severe_surface_fracture_crater")
+                features["description"] = f"Severe road crater or deep asphalt fracture observed (edge variance: {round(edge_density, 1)})."
 
-            # C. High: Dark street / night scene / light failure
-            elif max_channel < 55.0 and (lum < 45.0 or dark_ratio > 0.65):
-                features["is_dark"] = True
-                features["detected_priority"] = "High"
-                features["category_hint"] = "Street Light"
-                features["hazard_markers"].append("visual_low_lux_dark_street_or_light_failure")
-                features["visual_summary"] = (
-                    f"Low illumination / dark scene detected (lux mean: {round(lum, 1)}). "
-                    f"Assessed as High priority for street lighting maintenance."
-                )
+            # C. High: Dark street at night (light failure)
+            elif max_channel < 55.0 and (lum < 35.0 or dark_ratio > 0.70):
+                features["incident_type"] = "Street Light"
+                features["apparent_damage"] = "moderate"
+                features["severity_hint"] = "High"
+                features["visible_hazards"].append("low_lux_street_lighting_failure")
+                features["description"] = f"Very low illumination / dark street scene detected (lux mean: {round(lum, 1)})."
 
-            # D. Medium baseline
+            # D. Medium: Moderate pothole / standard road roughness
+            elif edge_density > 6.0:
+                features["incident_type"] = "Road/Pothole"
+                features["apparent_damage"] = "moderate"
+                features["severity_hint"] = "Medium"
+                features["visible_hazards"].append("road_surface_pothole")
+                features["description"] = f"Standard road pothole or surface roughness observed (edge metric: {round(edge_density, 1)})."
+
+            # E. Low: Smooth / minor damage or clean road
+            elif edge_density < 3.0:
+                features["incident_type"] = "Clean/No Damage"
+                features["apparent_damage"] = "none"
+                features["severity_hint"] = "Low"
+                features["description"] = "Photograph shows an ordinary surface without prominent visible damage."
+
             else:
-                features["detected_priority"] = "Medium"
-                features["category_hint"] = "Other"
-                features["visual_summary"] = (
-                    f"Grievance photograph inspected. Surface texture edge density: {round(edge_density, 1)}, "
-                    f"luminance: {round(lum, 1)}. Visual priority assessed as Medium."
-                )
+                features["incident_type"] = "Other"
+                features["apparent_damage"] = "minor"
+                features["severity_hint"] = "Low"
+                features["description"] = "Attached photograph inspected. Minor surface texture observed without acute hazards."
 
     except Exception as exc:
-        logger.debug("Local pixel analysis fallback skipped: %s", exc)
+        logger.debug("Local CV inspection failed: %s", exc)
+        features["uncertainty_indicators"].append("cv_inspection_error")
+
+    # Filename keyword hints as supporting cues
+    fn_lower = filename.lower()
+    if any(k in fn_lower for k in ["wire", "electric", "spark"]):
+        if features["incident_type"] == "Other":
+            features["incident_type"] = "Electricity"
+    elif any(k in fn_lower for k in ["pothole", "crater"]):
+        if features["incident_type"] == "Other":
+            features["incident_type"] = "Road/Pothole"
 
     return features
 
 
 def analyze_image_visual_priority(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """
-    Analyzes visual content of an uploaded grievance photo to detect hazards,
-    determine municipal category, and predict visual priority level.
-    Uses:
-    1. Local Pillow computer vision inspection (edge density, luminance, color saturation).
-    2. Google GenAI SDK (gemini-2.5-flash) multimodal vision inspection when GEMINI_API_KEY is configured.
-    3. Filename semantic keyword triggers for explicit civic issues.
+    Main image visual inspection handler.
+    1. Attempts Ollama Gemma 3 Vision query (gemma3:4b).
+    2. Falls back cleanly to local OpenCV + Pillow computer vision.
+    Returns structured visual evidence.
     """
-    # 1. Run local computer vision analysis on image pixels
-    pixel_features = _analyze_image_pixels(file_bytes)
+    # 1. Try Ollama local vision model first
+    ollama_result = query_ollama_vision(file_bytes, filename)
+    if ollama_result is not None:
+        return {
+            "visual_priority": ollama_result["severity_hint"],
+            "category_hint": ollama_result["incident_type"],
+            "apparent_damage": ollama_result["apparent_damage"],
+            "hazard_markers": ollama_result["visible_hazards"],
+            "visual_summary": ollama_result["description"],
+            "confidence": ollama_result["confidence"],
+            "uncertainty_indicators": ollama_result["uncertainty_indicators"],
+            "ocr_text": "",
+            "vision_source": "ollama_gemma3",
+        }
 
-    result: Dict[str, Any] = {
-        "visual_priority": pixel_features.get("detected_priority", "Medium"),
-        "category_hint": pixel_features.get("category_hint", "Other"),
-        "hazard_markers": list(pixel_features.get("hazard_markers", [])),
-        "visual_summary": pixel_features.get("visual_summary", ""),
+    # 2. Local computer vision fallback
+    local_result = analyze_image_local_cv(file_bytes, filename)
+    return {
+        "visual_priority": local_result["severity_hint"],
+        "category_hint": local_result["incident_type"],
+        "apparent_damage": local_result["apparent_damage"],
+        "hazard_markers": local_result["visible_hazards"],
+        "visual_summary": local_result["description"],
+        "confidence": local_result["confidence"],
+        "uncertainty_indicators": local_result["uncertainty_indicators"],
         "ocr_text": "",
+        "vision_source": "local_cv_fallback",
     }
-
-    # 2. Filename keyword reinforcement
-    fn_lower = filename.lower()
-    if any(k in fn_lower for k in ["wire", "electric", "spark", "shock", "fire", "blast", "danger", "urgent", "manhole"]):
-        result["visual_priority"] = "Critical"
-        if result["category_hint"] == "Other":
-            result["category_hint"] = "Electricity" if "wire" in fn_lower or "electric" in fn_lower else "Road/Pothole"
-        if "visual_inspection_hazard" not in result["hazard_markers"]:
-            result["hazard_markers"].append("visual_inspection_hazard")
-    elif any(k in fn_lower for k in ["pothole", "crater", "sewage", "flood", "leak", "garbage"]):
-        if result["visual_priority"] != "Critical":
-            result["visual_priority"] = "High"
-        if result["category_hint"] == "Other":
-            result["category_hint"] = "Road/Pothole" if "pothole" in fn_lower or "crater" in fn_lower else "Garbage/Waste Management"
-        if "infrastructure_damage_observed" not in result["hazard_markers"]:
-            result["hazard_markers"].append("infrastructure_damage_observed")
-
-    # 3. Google GenAI Multimodal Vision Inspection (if GEMINI_API_KEY is configured)
-    api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
-    ext = Path(filename).suffix.lower()
-    mime_type = IMAGE_MIME_TYPES.get(ext, "image/jpeg")
-
-    if api_key and len(file_bytes) > 64:
-        try:
-            from google import genai
-            from google.genai import types
-
-            client = genai.Client(api_key=api_key)
-            image_part = types.Part.from_bytes(data=file_bytes, mime_type=mime_type)
-
-            prompt = (
-                "You are an expert Smart City Municipal Field Inspector. Analyze this civic complaint photograph thoroughly.\n"
-                "Provide a rigorous structural assessment of the municipal issue.\n\n"
-                "EVALUATE AND REPORT IN THIS EXACT FORMAT:\n"
-                "CATEGORY: <Choose one: Road/Pothole, Street Light, Garbage/Waste Management, Water Supply, Drainage/Sewerage, Electricity, Public Toilet, Traffic, Other>\n"
-                "PRIORITY: <Choose one: Critical, High, Medium, Low>\n"
-                "HAZARD_INDICATORS: <Comma-separated list of visual hazards, e.g. exposed electrical wire, sparking, open manhole, deep crater, severe flooding, massive garbage accumulation>\n"
-                "VISIBLE_TEXT: <Any street signs, pole numbers, banner texts visible>\n"
-                "SUMMARY: <Concise, factual description of the damage, obstruction, and urgency>\n\n"
-                "PRIORITY GUIDELINES:\n"
-                "- Critical: Immediate danger to life (exposed/sparking electric wires, deep open manholes on paths, severe road cave-in, live fire/gas risk, hospital access cut off).\n"
-                "- High: Major public disruption (major water pipeline burst, overflowing raw sewage near homes, completely impassable road crater, massive rotting garbage dump blocking lane).\n"
-                "- Medium: Standard municipal issue (typical pothole, broken street light pole, overflowing localized dustbin, minor gutter block).\n"
-                "- Low: Minor cosmetic wear, faint road marking, harmless debris."
-            )
-
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL or "gemini-2.5-flash",
-                contents=[image_part, prompt],
-            )
-
-            if response and response.text:
-                raw_output = response.text.strip()
-                for line in raw_output.splitlines():
-                    line_s = line.strip()
-                    if line_s.upper().startswith("CATEGORY:"):
-                        cat = line_s.split(":", 1)[1].strip()
-                        if cat and cat != "Other":
-                            result["category_hint"] = cat
-                    elif line_s.upper().startswith("PRIORITY:"):
-                        pri = line_s.split(":", 1)[1].strip().capitalize()
-                        if pri in ["Critical", "High", "Medium", "Low"]:
-                            result["visual_priority"] = pri
-                    elif line_s.upper().startswith("HAZARD_INDICATORS:"):
-                        hazards = line_s.split(":", 1)[1].strip()
-                        if hazards and hazards.lower() != "none":
-                            for h in hazards.split(","):
-                                h_clean = h.strip()
-                                if h_clean and h_clean not in result["hazard_markers"]:
-                                    result["hazard_markers"].append(h_clean)
-                    elif line_s.upper().startswith("VISIBLE_TEXT:"):
-                        txt = line_s.split(":", 1)[1].strip()
-                        if txt and txt.lower() != "none":
-                            result["ocr_text"] = txt
-                    elif line_s.upper().startswith("SUMMARY:"):
-                        summary = line_s.split(":", 1)[1].strip()
-                        if summary:
-                            result["visual_summary"] = summary
-
-                if not result["visual_summary"]:
-                    result["visual_summary"] = raw_output[:300]
-                return result
-        except Exception as exc:
-            logger.warning("Gemini visual analysis failed: %s. Using local computer vision inspection.", exc)
-
-    if not result["visual_summary"]:
-        result["visual_summary"] = (
-            f"Grievance photograph '{filename}' attached for field inspection. "
-            f"Visual priority assessed as {result['visual_priority']}."
-        )
-
-    return result
 
 
 def extract_text_from_image(file_bytes: bytes, filename: str) -> Tuple[bool, str, List[str], str, Dict[str, Any]]:
@@ -386,21 +406,20 @@ def extract_text_from_image(file_bytes: bytes, filename: str) -> Tuple[bool, str
     # 2. Visual analysis & priority prediction
     visual_analysis = analyze_image_visual_priority(file_bytes, filename)
 
-    # 3. Synthesize structured text for deterministic NLP intake
+    # 3. Synthesize structured text (without artificially injecting 'Visual Priority Level: High' to avoid circular overrides)
     paragraphs = []
     header = f"[Visual Inspection of Attached Photo: {filename}]"
     paragraphs.append(header)
 
     analysis_bullets = [
-        f"- Identified Category: {visual_analysis['category_hint']}",
-        f"- Visual Priority Level: {visual_analysis['visual_priority']}",
+        f"- Physical Evidence Observed: {visual_analysis['visual_summary'] or 'Field photo inspected.'}",
+        f"- Identified Incident Type: {visual_analysis['category_hint']}",
+        f"- Apparent Physical Damage: {visual_analysis.get('apparent_damage', 'moderate')}",
     ]
     if visual_analysis["hazard_markers"]:
-        analysis_bullets.append(f"- Visual Hazard Indicators: {', '.join(visual_analysis['hazard_markers'])}")
-    if visual_analysis["ocr_text"]:
-        analysis_bullets.append(f"- Visible On-Site Text: {visual_analysis['ocr_text']}")
-    if visual_analysis["visual_summary"]:
-        analysis_bullets.append(f"- Visual Evidence Details: {visual_analysis['visual_summary']}")
+        analysis_bullets.append(f"- Visible Hazard Markers: {', '.join(visual_analysis['hazard_markers'])}")
+    if visual_analysis.get("uncertainty_indicators"):
+        analysis_bullets.append(f"- Image Quality / Uncertainty Flags: {', '.join(visual_analysis['uncertainty_indicators'])}")
 
     paragraphs.append("\n".join(analysis_bullets))
 

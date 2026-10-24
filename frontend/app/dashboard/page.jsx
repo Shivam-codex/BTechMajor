@@ -99,6 +99,7 @@ export default function AdminDashboardPage() {
     High: "bg-amber-100 text-amber-800 border-amber-200",
     Medium: "bg-blue-100 text-blue-800 border-blue-200",
     Low: "bg-slate-100 text-slate-700 border-slate-200",
+    "Review Required": "bg-purple-100 text-purple-800 border-purple-200",
   };
 
   const statusColors = {
@@ -336,6 +337,7 @@ export default function AdminDashboardPage() {
             <option value="Medium">Medium</option>
             <option value="High">High</option>
             <option value="Critical">Critical</option>
+            <option value="Review Required">Review Required</option>
           </select>
 
           <select

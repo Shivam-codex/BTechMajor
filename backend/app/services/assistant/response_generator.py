@@ -149,6 +149,47 @@ def format_deterministic_response(
     }
 
 
+def generate_ollama_response(
+    user_prompt: str,
+    system_instruction: str,
+    model_name: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Synthesizes a fluent, local-first conversational response using locally hosted Ollama (e.g. gemma3:4b).
+    Returns None if Ollama is unreachable, model is not pulled, or generation fails.
+    """
+    try:
+        import httpx
+
+        base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+        api_url = f"{base_url}/api/generate"
+        target_model = model_name or settings.OLLAMA_VISION_MODEL or "gemma3:4b"
+
+        payload = {
+            "model": target_model,
+            "system": system_instruction,
+            "prompt": user_prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.2,
+                "num_predict": 300,
+            },
+        }
+
+        with httpx.Client(timeout=settings.OLLAMA_TIMEOUT_SECONDS) as client:
+            resp = client.post(api_url, json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                ans_text = str(data.get("response", "")).strip()
+                if ans_text:
+                    if "Sample Municipal Knowledge Base" not in ans_text:
+                        ans_text = f"According to the official **Sample Municipal Knowledge Base** (via local Gemma 3):\n\n{ans_text}"
+                    return ans_text
+    except Exception as exc:
+        logger.debug("Local Ollama assistant generation skipped/failed: %s", exc)
+    return None
+
+
 def generate_llm_response(
     question: str,
     retrieved_chunks: list,
@@ -156,21 +197,16 @@ def generate_llm_response(
     conversation_history: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     """
-    Synthesizes a fluent, articulate, ChatGPT/Gemini-style response using Google GenAI SDK.
-    Grounds response strictly in retrieved municipal knowledge base chunks and conversational context.
-    Falls back gracefully to format_conversational_fallback if GEMINI_API_KEY is not configured or call fails.
+    Synthesizes a fluent, articulate, ChatGPT/Gemini-style response.
+    Tier 1: Google GenAI (Gemini) if GEMINI_API_KEY is configured.
+    Tier 2: Local Ollama Gemma 3 (gemma3:4b) for zero-cost, private local generation.
+    Tier 3: Rich deterministic conversational template generator.
     """
     clean_question = (question or "").strip()
 
     # Out of domain check
     if intent_info and intent_info.get("intent") == "OUT_OF_DOMAIN":
         return format_conversational_fallback(clean_question, [], intent_info)
-
-    api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
-
-    if not api_key:
-        logger.info("GEMINI_API_KEY not set. Using conversational local response generator.")
-        return format_conversational_fallback(clean_question, retrieved_chunks, intent_info)
 
     # 1. Format retrieved knowledge context for LLM prompt
     context_blocks = []
@@ -219,32 +255,39 @@ def generate_llm_response(
         f"Please provide an articulate, warm, comprehensive, and step-by-step response to assist the citizen."
     )
 
-    try:
-        client = genai.Client(api_key=api_key)
-        model_name = settings.GEMINI_MODEL or "gemini-2.5-flash"
+    # 3. Tier 1: Try Google Gemini GenAI if API key is present
+    api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
+    if api_key:
+        try:
+            client = genai.Client(api_key=api_key)
+            model_name = settings.GEMINI_MODEL or "gemini-2.5-flash"
 
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.2,
-        )
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.2,
+            )
 
-        response = client.models.generate_content(
-            model=model_name,
-            contents=user_prompt,
-            config=config,
-        )
+            response = client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=config,
+            )
 
-        if response and response.text:
-            ans_text = response.text.strip()
-            if "Sample Municipal Knowledge Base" not in ans_text:
-                ans_text = f"According to the official **Sample Municipal Knowledge Base**:\n\n{ans_text}"
-            return ans_text
-        else:
-            return format_conversational_fallback(clean_question, retrieved_chunks, intent_info)
+            if response and response.text:
+                ans_text = response.text.strip()
+                if "Sample Municipal Knowledge Base" not in ans_text:
+                    ans_text = f"According to the official **Sample Municipal Knowledge Base**:\n\n{ans_text}"
+                return ans_text
+        except Exception as exc:
+            logger.warning(
+                "Gemini GenAI API call failed (%s). Attempting local generation.",
+                str(exc),
+            )
 
-    except Exception as exc:
-        logger.warning(
-            "Gemini GenAI API call failed (%s). Falling back to conversational response generator.",
-            str(exc),
-        )
-        return format_conversational_fallback(clean_question, retrieved_chunks, intent_info)
+    # 4. Tier 2: Try local Ollama (Gemma 3) if running
+    ollama_ans = generate_ollama_response(user_prompt, system_instruction)
+    if ollama_ans:
+        return ollama_ans
+
+    # 5. Tier 3: Local Deterministic Template Fallback
+    return format_conversational_fallback(clean_question, retrieved_chunks, intent_info)

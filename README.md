@@ -27,15 +27,15 @@ This project delivers a **local, explainable, and deterministic Smart City Compl
 ```mermaid
 flowchart TD
     A[Citizen Grievance Submission] --> B[Mandatory Photo Upload\nJPG / PNG / WEBP / BMP]
-    A --> C[Optional Audio Input\nLive Voice Recording or MP3/WAV/WEBM]
+    A --> C[Audio Input\nLive Voice Recording or MP3/WAV/M4A/WEBM/MP4]
     A --> D[Optional Documents\nPDF / DOCX / TXT]
     A --> E[Optional Description\nText Typing or Voice Dictation]
 
-    B --> F[Image Inspection Service\nEXIF GPS Coordinates & Visual Hazard Severity]
-    C --> G[Audio Extractor & Speech Analyzer\nSpeech-to-Text & Deterministic NLP Word Extraction]
+    B --> F[Image Inspection Service\nEXIF GPS Coordinates + Ollama Gemma 3 Vision / OpenCV Fallback]
+    C --> G[Local Speech Recognition\nIn-Memory FFmpeg Decoding + Faster-Whisper CPU int8]
     D --> H[Document Text & Table Extractor\npypdf, python-docx, pdfplumber]
 
-    F & G & H & E --> I[Correlated Multimodal Dossier\nLocation Resolution & Combined Evidence]
+    F & G & H & E --> I[Correlated Multimodal Evidence Dossier\nLocation Resolution & Cross-Modal Conflict Check]
     I --> J[Deterministic NLP Preprocessing\nUnicode NFC, Tokenizer, Stopword Filter, Lemmatizer]
     J --> K[Rule-Based Classifier\nWeighted Dictionaries & Negative Suppression]
     
@@ -46,10 +46,14 @@ flowchart TD
     M --> O[Automatic Department Assignment\ne.g., Roads & Infrastructure, Water Supply]
     N --> P[General Grievance Cell]
 
-    I & J --> Q[Fused Priority Detector\nCorrelates Spoken Words + Visual Hazard Markers]
+    I & J --> Q[Dedicated Severity Assessment Engine\nContext-Aware Negation, Modals, Multimodal Contradiction]
+    Q --> R{Assigned Severity Tier}
+    R -- Critical / High / Medium / Low --> S[(SQLite Relational Database)]
+    R -- Review Required --> T[Status: Needs Review\nFlagged for Field Verification]
+    T --> S
     
-    O & P & Q --> R[(SQLite Relational Database\nEncrypted Passwords & Stored Media)]
-    R --> S[Admin Command Center & Citizen Tracking Portal]
+    O & P --> S
+    S --> U[Admin Command Center & Citizen Tracking Portal]
 ```
 
 ### 2. Conversational RAG Assistant Architecture
@@ -73,23 +77,31 @@ flowchart LR
 
 ## ✨ Key Features & Capabilities
 
-### 📸 1. Mandatory Photo Evidence & GPS Extraction
+### 📸 1. Mandatory Photo Evidence & Local Vision Inspection (Ollama + Gemma 3 Vision)
 - Citizens must attach at least one photograph of the civic issue before submitting a complaint.
-- Automatically extracts **EXIF GPS coordinates** (Latitude & Longitude) directly from the camera metadata and reverse-geocodes to the exact street/ward (with fallback to HTML5 device location).
-- Inspects the photo for visual hazard indicators (exposed live wires, severe road cave-ins, deep open manholes, flooded streets).
+- Automatically extracts **EXIF GPS coordinates** (Latitude & Longitude) directly from camera metadata and reverse-geocodes to the exact street/ward (with fallback to HTML5 device location).
+- **Ollama Gemma 3 Vision (`gemma3:4b`):** Runs locally without paid cloud APIs to interpret incident scenes, extracting machine-readable JSON observations (`incident_type`, `visible_hazards`, `apparent_damage`, `severity_hint`, `confidence`).
+- **Offline Fallback:** If Ollama is offline or uninstalled, the system immediately falls back in <50ms to local OpenCV Laplacian blur checking and Pillow luminance/texture/color analysis. Vision models are used as evidence extractors and never invent injuries, financial loss, or GPS coordinates.
 
-### 🎙️ 2. Live Audio Recording & NLP Word Extraction
-- **In-Browser Audio Recording:** Citizens can record audio memos directly using the browser microphone (`MediaRecorder` API) with real-time timer, visual waveform pulse, and stop/cancel controls.
-- **Speech Transcription:** Transcribes spoken audio preserving English, Marathi, or Hindi speech.
-- **NLP Word Extraction:** Tokenizes spoken words, filters stopwords, extracts canonical lemmas, and identifies municipal hazard vocabulary (e.g. *"sparking"*, *"exposed wire"*, *"accident"*, *"burst"*, *"leak"*, *"धोकादायक"*, *"अपघात"*).
+### 🎙️ 2. Free Local Speech Recognition (Faster-Whisper) & Audio Ingestion
+- **Local Multilingual Speech Recognition:** Uses Faster-Whisper with CPU `int8` quantization (~200 MB RAM) to transcribe spoken Marathi, Hindi, and English verbatim without cloud API subscriptions.
+- **Universal FFmpeg Audio Decoding:** Decodes MP3, WAV, M4A, OGG, WEBM, AAC, and extracts audio streams from `.mp4` video containers in memory.
+- **Audio Quality Checks:** Detects silent audio recordings via PCM RMS energy analysis and flags corrupted bitstreams.
+- **Live Recording & Transcription Editing:** Supports live in-browser microphone capture (`MediaRecorder` API), displays the extracted verbatim transcript, and allows citizens to review or edit before submission.
 
-### ⚡ 3. Fused Multimodal Priority Triage
-- Priority is decided deterministically by correlating both **NLP-extracted words from speech/text** and **visual hazard markers from the uploaded photo**:
-  - **Critical (Score: 1.0):** Immediate life hazard detected via critical speech keywords (e.g., exposed sparking wire, gas leak, building collapse) or visual structural danger.
-  - **High (Score: 0.75):** Severe municipal disruption (e.g., main road blocked, sewage entering houses, days without water, pipeline burst).
-  - **Medium (Score: 0.50):** Standard civic issue without immediate danger.
-  - **Low (Score: 0.25):** Routine query, cosmetic maintenance, or suggestion.
-- Every priority decision includes a 100% explainable rationale detailing the exact words and visual cues that triggered it.
+### ⚡ 3. Explainable Severity Assessment Engine
+- Implements a dedicated, context-aware 5-tier municipal severity policy:
+  - **Critical (Score: 1.0):** Active, credible life-threatening emergency requiring urgent escalation (e.g. exposed sparking live wire, gas leak, building collapse, fatal accident).
+  - **High (Score: 0.75):** Serious incident or substantial damage requiring urgent intervention (e.g. main road completely blocked, major pipeline burst, sewage flooding houses).
+  - **Medium (Score: 0.50):** Significant non-emergency civic grievance requiring timely attention (e.g. standard pothole, water leak, dustbin overflow, dark street light).
+  - **Low (Score: 0.25):** Minor, routine, cosmetic, or procedural matter (e.g. small pothole, minor pipe drip, routine pruning, tax receipt inquiry).
+  - **Review Required (Score: 0.45):** Insufficient, contradictory, or vague evidence (e.g. vague accident mention without details, or text claiming catastrophic destruction while attached photo shows `apparent_damage="none"`).
+- **Linguistic Context Filtering:**
+  - **Negation:** Suppresses emergency triggers when preceded or followed by negation words (*"no accident"*, *"not dangerous"*, *"नाही"*).
+  - **Hypothetical Statements:** Prevents escalation on preventive phrases (*"to prevent accidents in the future"*).
+  - **Historical Mentions:** Dampens references to past events (*"there was a fire last year, now need pruning"*).
+  - **Qualifiers:** Differentiates minor qualifiers (*"small"*, *"minor"*, *"slight"*) from severe intensifiers (*"massive"*, *"severe"*, *"critical"*).
+- Every decision returns an explainable payload containing detected keywords, uncertainty indicators, evidence sources, and escalation reasons.
 
 ### 📁 4. Multi-Attachment Evidence Review
 - Citizens and municipal administrators can inspect all attached evidence on the complaint detail page (`/complaints/[id]`):
@@ -99,27 +111,24 @@ flowchart LR
 
 ### 🔐 5. Role-Based Access Control (RBAC) & Data Segregation
 - **Citizen:** Can submit grievances, track personal complaints, view personal attachments, and use the AI assistant.
-- **Departmental Administrator:** Restricted strictly to grievances within their assigned municipal department. Can update status (`In Progress`, `Resolved`), assign priority, and log resolution notes.
+- **Departmental Administrator:** Restricted strictly to grievances within their assigned municipal department. Can update status (`In Progress`, `Resolved`, `Needs Review`), assign priority, and log resolution notes.
 - **Super Administrator:** Complete municipal authority across all departments, reassignments, user roles, and city-wide analytics.
 
 ---
 
-## 🛠️ Technology Stack
+## 🛠️ Technology Stack & Local Resource Profile
 
-| Layer | Technology | Details |
-|:---|:---|:---|
-| **Frontend Framework** | Next.js 14 / React 18 | App Router architecture with server & client components |
-| **Styling & Icons** | Tailwind CSS + Lucide React | Modern responsive interface, dark/light badges, and accessible controls |
-| **Audio Recording** | HTML5 `MediaRecorder` API | In-browser microphone capture (`audio/webm`, `audio/wav`, `audio/ogg`) |
-| **Speech-to-Text** | Web Speech API & Multimodal Audio | Live dictation in English, Marathi, and Hindi |
-| **Backend Framework** | FastAPI (Python 3.13) | Asynchronous, high-throughput REST API with automated OpenAPI Swagger docs |
-| **Data Validation** | Pydantic v2 | Strict schema typing and request/response validation |
-| **ORM & Database** | SQLAlchemy 2.0 / SQLite 3 | Relational schema configured with Write-Ahead Logging (WAL) |
-| **Security & Auth** | `python-jose` + `passlib` | Salted PBKDF2/Bcrypt password hashing and stateless HS256 JWT tokens |
-| **Document Parsers** | `pdfplumber`, `pypdf`, `python-docx` | Binary text and table extraction with character normalization |
-| **Image Processing** | Pillow (PIL) | EXIF binary header inspection and GPS rational-tuple conversion |
-| **Classical IR & Vectorizer**| `scikit-learn` | TF-IDF vectorization and cosine similarity lexical ranking across 14 bylaws |
-| **Automated Testing** | Pytest | 91 automated unit and integration tests |
+| Layer | Technology | Details | Memory Footprint (16 GB Laptop) |
+|:---|:---|:---|:---|
+| **Local Speech STT** | Faster-Whisper (`base`, int8, CPU) | Offline multilingual transcription (Marathi, Hindi, English) | ~200 MB RAM |
+| **Local Vision AI** | Ollama + Gemma 3 Vision (`gemma3:4b`) | Structured JSON scene hazard & damage extraction | ~3.3 GB RAM (Q4) |
+| **Audio Container Decoder** | In-Memory FFmpeg (`imageio-ffmpeg`) | MP3, WAV, M4A, OGG, WEBM, AAC, MP4 extraction | ~30 MB RAM |
+| **Computer Vision Fallback**| OpenCV & Pillow | Laplacian blur, luminance, texture, EXIF GPS | ~45 MB RAM |
+| **Backend Framework** | FastAPI (Python 3.13) / Uvicorn | High-throughput REST API with OpenAPI Swagger | ~150 MB RAM |
+| **Frontend Framework** | Next.js 14 / React 18 | App Router architecture with Tailwind CSS | ~250 MB RAM |
+| **Database & ORM** | SQLAlchemy 2.0 / SQLite 3 | Relational schema with Write-Ahead Logging (WAL) | ~20 MB RAM |
+| **Lexical IR & Search** | `scikit-learn` TF-IDF + BM25 | Ranked knowledge retrieval across 74 bylaw chunks | ~40 MB RAM |
+| **Total System Footprint**| **100% Local & Free** | **Zero Paid APIs / Zero External Cloud Uploads** | **< 4.2 GB Peak (Leaves >11.8 GB Free)** |
 
 ---
 
@@ -221,23 +230,38 @@ Evaluated across **50 citizen inquiries** against 14 documents (74 chunks):
 ### Prerequisites
 - Python 3.10+ (tested on Python 3.13)
 - Node.js 18+ (tested on Node v22.14)
+- *(Optional for Local Vision AI)*: [Ollama](https://ollama.com/) with `gemma3:4b`
 
-### 1. Environment Configuration
-Copy the example environment file and optionally configure your Google Gemini API key:
+### 1. (Optional) Local Vision AI Setup with Ollama & Gemma 3 Vision
+To enable local vision understanding without cloud APIs:
+```powershell
+# 1. Install Ollama on Windows (via winget or from https://ollama.com)
+winget install Ollama.Ollama
+
+# 2. Download and run the lightweight Gemma 3 4B Vision model (~3.3 GB VRAM/RAM)
+ollama run gemma3:4b
+```
+*(If Ollama is not installed or running, the system automatically falls back to OpenCV Laplacian blur checking and Pillow luminance/texture heuristics in <50ms without failing).*
+
+### 2. Local Speech Recognition with Faster-Whisper
+Faster-Whisper (`base` multilingual model) runs completely locally on CPU using `int8` quantization (~200 MB RAM). No external accounts, paid API keys, or cloud subscriptions are needed. Speech is transcribed verbatim in Marathi, Hindi, English, and code-mixed formats.
+
+### 3. Environment Configuration
+Copy the example environment file:
 ```cmd
 copy .env.example .env
 ```
 In `backend/.env` (or root `.env`):
 ```env
-# Optional: Google Gemini API key for multimodal vision & speech transcription
-# Obtain an API key from https://aistudio.google.com/
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
 SECRET_KEY=smart-city-super-secret-jwt-key-2026-academic-project
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_VISION_MODEL=gemma3:4b
+WHISPER_MODEL_SIZE=base
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
 ```
-*(Note: If `GEMINI_API_KEY` is not provided, the system seamlessly uses local Pillow computer-vision edge/luminance inspection for images, in-memory FFmpeg + SpeechRecognition STT for audio, and local deterministic template generators without errors).*
 
-### 2. Manual Terminal Launch (Recommended for VS Code)
+### 4. Manual Terminal Launch (Recommended for VS Code)
 
 Open two separate terminals in VS Code:
 
@@ -257,7 +281,7 @@ npm run dev
 ```
 - **Citizen Portal & Dashboard:** [http://localhost:3000](http://localhost:3000)
 
-### 3. Pre-Configured Test Accounts
+### 5. Pre-Configured Test Accounts
 
 | Role | Email | Password | Access Scope |
 |:---|:---|:---|:---|
@@ -268,11 +292,11 @@ npm run dev
 
 *(You can also self-register a new citizen account or file grievances as a Guest).*
 
-### 4. Running the Automated Test Suite
+### 6. Running the Automated Test Suite
 ```bash
 python -m pytest backend/tests/ -v
 ```
-*(Executes all **98 unit and integration tests** covering image pixel inspection, verbatim audio extraction, NLP word tokenization, multimodal priority decision, RBAC, and RAG assistant).*
+*(Executes all **110 unit and integration tests** covering local OpenCV/Pillow vision fallback, Ollama structured vision mocking, Faster-Whisper local speech extraction, in-memory FFmpeg MP4 audio container decoding, context-aware negation/hypothetical severity detection, RBAC, and RAG assistant).*
 
 ### 5. Running Academic Evaluation Scripts
 ```bash

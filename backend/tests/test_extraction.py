@@ -3,6 +3,7 @@ Unit tests for document extraction services (PDF, DOCX, TXT).
 Verifies parsing accuracy, security checks, and error boundaries.
 """
 
+from unittest.mock import patch
 from backend.app.services.extraction.document_service import extract_document_text
 from backend.app.utils.file_utils import sanitize_filename, validate_file_metadata
 
@@ -78,6 +79,26 @@ def test_extract_corrupted_file():
     assert res.error is not None
 
 
+def _generate_test_wav(duration_s: float = 0.5, silent: bool = False) -> bytes:
+    import io, wave, math, struct
+    sample_rate = 16000
+    num_samples = int(sample_rate * duration_s)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        if silent:
+            frames = b"\x00\x00" * num_samples
+        else:
+            frames = bytearray()
+            for i in range(num_samples):
+                val = int(8000 * math.sin(2 * math.pi * 440 * i / sample_rate))
+                frames.extend(struct.pack("<h", val))
+        wf.writeframes(frames)
+    return buf.getvalue()
+
+
 def test_validate_audio_metadata():
     valid, msg = validate_file_metadata("voice_complaint.mp3", 1024)
     assert valid
@@ -88,26 +109,35 @@ def test_validate_audio_metadata():
     valid_m4a, msg = validate_file_metadata("audio.m4a", 4096)
     assert valid_m4a
 
+    valid_mp4, msg = validate_file_metadata("evidence_clip.mp4", 8192)
+    assert valid_mp4
 
-def test_extract_audio_fallback():
-    dummy_audio_bytes = b"ID3\x03\x00\x00\x00\x00\x00\x00DummyAudioContent"
-    res = extract_document_text("citizen_voice.mp3", dummy_audio_bytes)
+
+def test_extract_audio_valid_decoding():
+    wav_bytes = _generate_test_wav(0.5, silent=False)
+    res = extract_document_text(
+        "citizen_voice.wav",
+        wav_bytes,
+        transcript="Deep pothole on MG Road causing severe traffic hazard",
+    )
     assert res.success
     assert res.source_type == "AUDIO"
-    assert "citizen_voice.mp3" in res.cleaned_text
+    assert "pothole" in res.cleaned_text.lower()
+    assert res.metadata.get("transcription") == "Deep pothole on MG Road causing severe traffic hazard"
 
 
-def test_audio_generic_name_does_not_extract_numbers_as_keywords():
-    dummy_webm = b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04\x42\xf3\x81\x08"
-    res = extract_document_text("recorded_audio_10-45-12.webm", dummy_webm)
-    assert res.success
-    assert res.source_type == "AUDIO"
-    meta = res.metadata
-    # Generic numbers and audio stems should not be in filtered keywords
-    assert "10" not in meta.get("filtered_keywords", [])
-    assert "45" not in meta.get("filtered_keywords", [])
-    assert "recorded" not in meta.get("filtered_keywords", [])
-    assert "audio" not in meta.get("filtered_keywords", [])
+def test_extract_audio_corrupted_rejected():
+    corrupted_bytes = b"NOT_A_VALID_AUDIO_CONTAINER_OR_BITSTREAM"
+    res = extract_document_text("broken.wav", corrupted_bytes)
+    assert not res.success
+    assert "audio decoding failed" in res.error.lower() or "invalid" in res.error.lower()
+
+
+def test_extract_audio_silent_recording_flagged():
+    silent_wav = _generate_test_wav(1.0, silent=True)
+    res = extract_document_text("silent_mic.wav", silent_wav)
+    assert not res.success
+    assert "silent" in res.error.lower()
 
 
 def test_validate_image_metadata():
@@ -162,7 +192,8 @@ def test_visual_inspection_rough_pothole_texture_predicts_high():
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     # File name does NOT contain "pothole" or "crater"
-    res = extract_document_text("IMG_20261021_001.jpg", buf.getvalue())
+    with patch("backend.app.services.extraction.image_extractor.query_ollama_vision", return_value=None):
+        res = extract_document_text("IMG_20261021_001.jpg", buf.getvalue())
     assert res.success
     assert res.source_type == "IMAGE"
     assert res.metadata.get("visual_priority") == "High"
@@ -178,7 +209,8 @@ def test_visual_inspection_dark_street_predicts_high():
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
 
-    res = extract_document_text("camera_photo_night.jpg", buf.getvalue())
+    with patch("backend.app.services.extraction.image_extractor.query_ollama_vision", return_value=None):
+        res = extract_document_text("camera_photo_night.jpg", buf.getvalue())
     assert res.success
     assert res.source_type == "IMAGE"
     assert res.metadata.get("visual_priority") == "High"
@@ -199,7 +231,8 @@ def test_visual_inspection_sparking_flame_pattern_predicts_critical():
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
 
-    res = extract_document_text("IMG_hazard.jpg", buf.getvalue())
+    with patch("backend.app.services.extraction.image_extractor.query_ollama_vision", return_value=None):
+        res = extract_document_text("IMG_hazard.jpg", buf.getvalue())
     assert res.success
     assert res.source_type == "IMAGE"
     assert res.metadata.get("visual_priority") == "Critical"
@@ -220,6 +253,55 @@ def test_audio_verbatim_speech_transcript_and_nlp_words():
     assert "wire" in meta["filtered_keywords"] or "electrical" in meta["filtered_keywords"]
     assert len(meta["hazard_keywords"]) > 0
     assert "primary school" in full_text.lower() or "station road" in full_text.lower()
+
+
+def test_ollama_vision_mock_and_fallback():
+    from unittest.mock import patch, MagicMock
+    import json
+    from backend.app.services.extraction.image_extractor import query_ollama_vision, analyze_image_visual_priority
+
+    dummy_img = b"\xff\xd8\xff\xe0" + b"\x00" * 100
+
+    # Test 1: Successful Ollama Gemma 3 vision inference
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "response": json.dumps({
+            "incident_type": "Road/Pothole",
+            "apparent_damage": "moderate",
+            "visible_hazards": ["deep pothole in middle of lane"],
+            "severity_hint": "Medium",
+            "description": "Deep asphalt crater visible in lane.",
+            "confidence": 0.88,
+            "uncertainty_indicators": []
+        })
+    }
+
+    mock_client = MagicMock()
+    mock_client.post.return_value = mock_resp
+    mock_client.__enter__.return_value = mock_client
+
+    with patch("httpx.Client", return_value=mock_client):
+        obs = query_ollama_vision(dummy_img, "test.jpg")
+        assert obs is not None
+        assert obs["incident_type"] == "Road/Pothole"
+        assert obs["apparent_damage"] == "moderate"
+        assert "deep pothole in middle of lane" in obs["visible_hazards"]
+
+    # Test 2: Offline fallback when Ollama is unavailable
+    fail_client = MagicMock()
+    fail_client.post.side_effect = Exception("Connection refused to Ollama")
+    fail_client.__enter__.return_value = fail_client
+
+    with patch("httpx.Client", return_value=fail_client):
+        obs_fallback = query_ollama_vision(dummy_img, "test.jpg")
+        assert obs_fallback is None
+
+        # Full analyze_image_visual_priority falls back cleanly
+        res = analyze_image_visual_priority(dummy_img, "test_pothole.jpg")
+        assert res["visual_priority"] in ["Critical", "High", "Medium", "Low", "Review Required"]
+        assert "vision_source" in res
+
 
 
 

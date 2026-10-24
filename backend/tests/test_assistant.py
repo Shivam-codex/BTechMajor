@@ -80,7 +80,8 @@ def test_generate_llm_response_mocked_gemini():
     )
 
     with patch("backend.app.services.assistant.response_generator.genai.Client") as mock_client_cls, \
-         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"):
+         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"), \
+         patch("backend.app.services.assistant.response_generator.generate_ollama_response", return_value=None):
         
         mock_instance = MagicMock()
         mock_instance.models.generate_content.return_value = mock_response
@@ -108,7 +109,8 @@ def test_generate_llm_response_graceful_fallback_on_api_error():
     )
 
     with patch("backend.app.services.assistant.response_generator.genai.Client") as mock_client_cls, \
-         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"):
+         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"), \
+         patch("backend.app.services.assistant.response_generator.generate_ollama_response", return_value=None):
         
         mock_instance = MagicMock()
         mock_instance.models.generate_content.side_effect = RuntimeError("API Quota Exceeded")
@@ -120,3 +122,32 @@ def test_generate_llm_response_graceful_fallback_on_api_error():
         assert "Sample Municipal Knowledge Base" in answer
         assert "Water Supply Protocol" in answer
         assert "4 to 6 hours" in answer
+
+
+def test_generate_llm_response_local_ollama_gemma3():
+    """Verifies that generate_llm_response uses local Ollama Gemma 3 when GEMINI_API_KEY is empty."""
+    sample_chunk = RetrievalResult(
+        chunk_id="KB-003_chk_01",
+        document_id="KB-003",
+        title="Street Lighting Standards",
+        category="Electricity",
+        department="Electrical & Energy Department",
+        source="Municipal Charter",
+        score=0.48,
+        text="Street lights are maintained daily and broken bulbs are replaced within 24 hours.",
+    )
+
+    mock_ollama_resp = MagicMock()
+    mock_ollama_resp.status_code = 200
+    mock_ollama_resp.json.return_value = {
+        "response": "Broken street lights are repaired within 24 hours by the Electrical Department."
+    }
+
+    with patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", ""), \
+         patch("httpx.Client.post", return_value=mock_ollama_resp) as mock_post:
+        
+        answer = generate_llm_response("When will my street light be repaired?", [sample_chunk])
+        assert "Broken street lights are repaired" in answer
+        assert "Sample Municipal Knowledge Base" in answer
+        assert mock_post.called
+

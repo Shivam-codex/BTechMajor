@@ -227,6 +227,8 @@ export default function MyComplaintsPage() {
                           ? "bg-rose-100 text-rose-800"
                           : isHigh
                           ? "bg-orange-100 text-orange-800"
+                          : cmp.priority === "Review Required"
+                          ? "bg-purple-100 text-purple-800"
                           : "bg-slate-100 text-slate-600"
                       }`}
                     >
