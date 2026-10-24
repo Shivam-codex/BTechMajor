@@ -49,7 +49,8 @@ def query_assistant(payload: AssistantQueryRequest):
         )
 
     try:
-        answer = query_municipal_assistant(clean_question)
+        history = [m.model_dump() for m in payload.conversation_history] if payload.conversation_history else None
+        answer = query_municipal_assistant(clean_question, conversation_history=history)
         return answer.to_dict()
     except Exception as e:
         raise HTTPException(

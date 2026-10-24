@@ -4,7 +4,7 @@ filtering queries, and detailed explainable responses.
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from backend.app.utils.constants import (
     ComplaintCategory,
@@ -21,6 +21,7 @@ class ComplaintCreate(BaseModel):
     location: Optional[str] = Field(None, max_length=255)
     source_type: SourceType = SourceType.MANUAL
     source_file_name: Optional[str] = None
+    source_file_path: Optional[str] = None
     extracted_text: Optional[str] = None
 
 
@@ -37,6 +38,9 @@ class ComplaintResponse(BaseModel):
     complaint_text: str
     extracted_text: Optional[str] = None
     source_file_name: Optional[str] = None
+    source_file_path: Optional[str] = None
+    attachment_url: Optional[str] = None
+    attachments: List[Dict[str, Any]] = Field(default_factory=list)
     source_type: str
     language: str
     category: str

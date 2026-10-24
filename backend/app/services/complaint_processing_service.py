@@ -10,7 +10,8 @@ Coordinates the end-to-end deterministic grievance intake pipeline:
 Ensures uniform business logic across all API endpoints and batch scripts.
 """
 
-from typing import Optional
+from pathlib import Path
+from typing import Optional, List, Tuple, Dict, Any
 from sqlalchemy.orm import Session
 from backend.app.models.complaint import Complaint, generate_complaint_id
 from backend.app.services.extraction.document_service import extract_document_text
@@ -18,14 +19,30 @@ from backend.app.services.nlp.preprocessing import preprocess_complaint
 from backend.app.services.classification.classifier import classify_complaint
 from backend.app.services.classification.department_router import assign_department
 from backend.app.services.classification.priority_detector import detect_priority
-from backend.app.utils.constants import SourceType, ComplaintStatus
-from backend.app.core.logging import log_event
+from backend.app.utils.constants import (
+    SourceType,
+    ComplaintStatus,
+    IMAGE_EXTENSIONS,
+    AUDIO_EXTENSIONS,
+    DOCUMENT_EXTENSIONS,
+)
+from backend.app.core.logging import log_event, logger
 from backend.app.models.base import utc_now
+from backend.app.core.config import settings
+from backend.app.utils.file_utils import sanitize_filename
 
 
 class ComplaintProcessingError(Exception):
     """Raised when an unrecoverable error occurs during complaint ingestion."""
     pass
+
+
+PRIORITY_RANK = {
+    "Critical": 4,
+    "High": 3,
+    "Medium": 2,
+    "Low": 1,
+}
 
 
 def process_complaint_pipeline(
@@ -35,8 +52,12 @@ def process_complaint_pipeline(
     location: Optional[str] = None,
     source_type: str = SourceType.MANUAL.value,
     source_file_name: Optional[str] = None,
+    source_file_path: Optional[str] = None,
     extracted_text: Optional[str] = None,
     user_id: Optional[int] = None,
+    visual_priority: Optional[str] = None,
+    complaint_id: Optional[str] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None,
 ) -> Complaint:
     """
     Executes complete deterministic processing on complaint text and persists record.
@@ -54,8 +75,8 @@ def process_complaint_pipeline(
     # 3. Automatic Department Assignment
     department, routing_reason = assign_department(classification.category)
 
-    # 4. Deterministic Priority Detection
-    priority_res = detect_priority(nlp_result)
+    # 4. Deterministic Priority Detection (with visual/audio evidence integration)
+    priority_res = detect_priority(nlp_result, visual_priority=visual_priority)
 
     # 5. Determine initial status
     initial_status = classification.status
@@ -64,12 +85,14 @@ def process_complaint_pipeline(
 
     # 6. Build and persist Complaint model
     complaint = Complaint(
-        id=generate_complaint_id(),
+        id=complaint_id or generate_complaint_id(),
         user_id=user_id,
         complaint_text=clean_text,
         extracted_text=extracted_text,
         source_file_name=source_file_name,
+        source_file_path=source_file_path,
         source_type=source_type,
+        attachments=attachments or [],
         language=nlp_result.language,
         category=classification.category,
         rule_match_score=classification.rule_match_score,
@@ -97,33 +120,208 @@ def process_complaint_pipeline(
         "priority": complaint.priority,
         "department": complaint.department,
         "status": complaint.status,
+        "attachment_count": len(complaint.attachments or []),
     })
 
     return complaint
+
+
+def process_multimodal_complaint(
+    db: Session,
+    files_list: List[Tuple[str, bytes]],
+    complaint_text: Optional[str] = None,
+    citizen_name: Optional[str] = None,
+    location: Optional[str] = None,
+    user_id: Optional[int] = None,
+    require_image: bool = True,
+    audio_transcripts: Optional[Dict[str, str]] = None,
+    visual_priority: Optional[str] = None,
+) -> Complaint:
+    """
+    Processes a complaint containing one or more uploaded attachments (mandatory image(s) + optional audio/documents).
+    1. Enforces mandatory image upload when require_image=True.
+    2. Extracts text, audio speech transcription, document tables/text, and image EXIF GPS / visual hazard markers.
+    3. Correlates evidence across all uploaded attachments and optional citizen text.
+    4. Persists all uploaded files to disk and stores structured attachment metadata on the Complaint record.
+    """
+    if not files_list:
+        raise ComplaintProcessingError("At least one image file must be uploaded to submit a complaint.")
+
+    has_image = any(
+        Path(sanitize_filename(fname)).suffix.lower() in IMAGE_EXTENSIONS
+        for fname, _ in files_list
+    )
+    if require_image and not has_image:
+        raise ComplaintProcessingError(
+            "Mandatory Image Upload Required: Please upload at least one image (.jpg, .jpeg, .png, .webp, .bmp) to file a complaint."
+        )
+
+    cid = generate_complaint_id()
+    try:
+        settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Could not create upload directory: {e}")
+
+    attachments_list: List[Dict[str, Any]] = []
+    extracted_sections: List[str] = []
+    source_types_seen: List[str] = []
+    highest_multimodal_priority: Optional[str] = None
+    exif_gps_location: Optional[str] = None
+    spoken_audio_location: Optional[str] = None
+
+    transcripts_map = audio_transcripts or {}
+
+    for idx, (file_name, file_bytes) in enumerate(files_list):
+        safe_lookup = sanitize_filename(file_name)
+        file_transcript = transcripts_map.get(file_name) or transcripts_map.get(safe_lookup)
+        extraction_res = extract_document_text(file_name, file_bytes, transcript=file_transcript)
+        if not extraction_res.success:
+            raise ComplaintProcessingError(
+                f"Failed to process attachment '{file_name}': {extraction_res.error or 'Unable to extract content.'}"
+            )
+
+        safe_name = extraction_res.source_file_name
+        ext = Path(safe_name).suffix.lower()
+        if ext in IMAGE_EXTENSIONS:
+            media_category = "image"
+        elif ext in AUDIO_EXTENSIONS:
+            media_category = "audio"
+        else:
+            media_category = "document"
+
+        stored_name = f"{cid}_{safe_name}" if idx == 0 else f"{cid}_{idx}_{safe_name}"
+        stored_path = None
+        try:
+            disk_target = settings.UPLOAD_DIR / stored_name
+            disk_target.write_bytes(file_bytes)
+            stored_path = stored_name
+        except Exception as e:
+            logger.warning(f"Could not persist upload '{safe_name}' to disk: {e}")
+
+        meta = extraction_res.metadata or {}
+        cleaned_content = extraction_res.cleaned_text
+
+        # Track location hints from Image EXIF GPS and Audio transcription
+        if meta.get("has_gps") and meta.get("location_name") and not exif_gps_location:
+            exif_gps_location = meta["location_name"]
+        if meta.get("spoken_location") and not spoken_audio_location:
+            spoken_audio_location = meta["spoken_location"]
+
+        # Track highest priority across Image visual inspection and Audio urgency analysis
+        candidate_priority = meta.get("visual_priority") or meta.get("audio_priority")
+        if candidate_priority in PRIORITY_RANK:
+            if (
+                highest_multimodal_priority is None
+                or PRIORITY_RANK[candidate_priority] > PRIORITY_RANK.get(highest_multimodal_priority, 0)
+            ):
+                highest_multimodal_priority = candidate_priority
+
+        source_types_seen.append(extraction_res.source_type)
+        if len(files_list) == 1:
+            extracted_sections.append(cleaned_content)
+        else:
+            extracted_sections.append(
+                f"--- [{extraction_res.source_type} Attachment #{idx + 1}: {safe_name}] ---\n{cleaned_content}"
+            )
+
+        attachments_list.append({
+            "index": idx,
+            "file_name": safe_name,
+            "file_path": stored_path,
+            "source_type": extraction_res.source_type,
+            "media_category": media_category,
+            "extracted_text": cleaned_content,
+            "url": f"/api/complaints/{cid}/attachment?index={idx}",
+        })
+
+    # Factor in explicit citizen / UI visual priority selection if provided
+    if visual_priority and visual_priority.strip().capitalize() in PRIORITY_RANK:
+        vp_cap = visual_priority.strip().capitalize()
+        if (
+            highest_multimodal_priority is None
+            or PRIORITY_RANK[vp_cap] > PRIORITY_RANK.get(highest_multimodal_priority, 0)
+        ):
+            highest_multimodal_priority = vp_cap
+
+    # Location resolution:
+    # 1. Image EXIF GPS takes priority when user location is absent or generic device fallback
+    # 2. Spoken audio location is used as secondary fallback if user location is absent
+    resolved_location = location
+    if exif_gps_location:
+        if not resolved_location or not resolved_location.strip() or "device location" in resolved_location.lower():
+            resolved_location = exif_gps_location
+    elif spoken_audio_location and (not resolved_location or not resolved_location.strip()):
+        resolved_location = spoken_audio_location
+
+    combined_extracted_text = "\n\n".join(extracted_sections)
+
+    # Build unified complaint text correlating manual description + all attachments
+    if len(files_list) == 1:
+        single_att = attachments_list[0]
+        if complaint_text and complaint_text.strip():
+            final_text = (
+                f"{complaint_text.strip()}\n\n"
+                f"[Attached {single_att['source_type']} ({single_att['file_name']}) Content]:\n{combined_extracted_text}"
+            )
+        else:
+            final_text = combined_extracted_text
+    else:
+        attachment_blocks = [
+            f"[Attached {att['source_type']} ({att['file_name']}) Content]:\n{att['extracted_text']}"
+            for att in attachments_list
+        ]
+        joined_blocks = "\n\n".join(attachment_blocks)
+        if complaint_text and complaint_text.strip():
+            final_text = f"{complaint_text.strip()}\n\n{joined_blocks}"
+        else:
+            final_text = joined_blocks
+
+    # Determine primary source_type and primary file metadata for backward compatibility
+    unique_types = set(source_types_seen)
+    if len(unique_types) == 1:
+        primary_source_type = source_types_seen[0]
+    else:
+        primary_source_type = SourceType.MULTIMODAL.value
+
+    primary_attachment = attachments_list[0]
+
+    return process_complaint_pipeline(
+        db=db,
+        complaint_id=cid,
+        complaint_text=final_text,
+        citizen_name=citizen_name,
+        location=resolved_location,
+        source_type=primary_source_type,
+        source_file_name=primary_attachment["file_name"],
+        source_file_path=primary_attachment["file_path"],
+        extracted_text=combined_extracted_text,
+        user_id=user_id,
+        visual_priority=highest_multimodal_priority,
+        attachments=attachments_list,
+    )
 
 
 def process_document_complaint(
     db: Session,
     file_name: str,
     file_bytes: bytes,
+    complaint_text: Optional[str] = None,
     citizen_name: Optional[str] = None,
     location: Optional[str] = None,
     user_id: Optional[int] = None,
 ) -> Complaint:
     """
-    Handles file upload: extracts text -> executes complaint pipeline -> saves to DB.
+    Single-file complaint processing wrapper (delegates to process_multimodal_complaint).
+    Preserves backward compatibility with existing single-file tests and callers.
     """
-    extraction_res = extract_document_text(file_name, file_bytes)
-    if not extraction_res.success:
-        raise ComplaintProcessingError(extraction_res.error or "Failed to extract text from document.")
-
-    return process_complaint_pipeline(
+    return process_multimodal_complaint(
         db=db,
-        complaint_text=extraction_res.cleaned_text,
+        files_list=[(file_name, file_bytes)],
+        complaint_text=complaint_text,
         citizen_name=citizen_name,
         location=location,
-        source_type=extraction_res.source_type,
-        source_file_name=extraction_res.source_file_name,
-        extracted_text=extraction_res.cleaned_text,
         user_id=user_id,
+        require_image=False,
     )
+
+

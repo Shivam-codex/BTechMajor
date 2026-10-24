@@ -4,7 +4,7 @@ Compatible with SQLite by default, easily swappable with PostgreSQL.
 """
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,12 +38,20 @@ class Settings(BaseSettings):
     RETRIEVAL_TOP_K: int = 4
     SIMILARITY_THRESHOLD: float = 0.12
 
+    # Generative AI & Gemini API configuration
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
     # Authentication & JWT Security
     SECRET_KEY: str = "smart-city-super-secret-jwt-key-2026-academic-project"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
 
-    model_config = SettingsConfigDict(case_sensitive=True, env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=[".env", str(Path(__file__).resolve().parent.parent.parent / ".env"), str(Path(__file__).resolve().parent.parent.parent.parent / ".env")],
+        extra="ignore"
+    )
 
 
 settings = Settings()

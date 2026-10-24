@@ -38,18 +38,12 @@ export default function HomePage() {
   const [stats, setStats] = useState(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
-  // Auth Popup Modal State
+  // Auth Popup Modal State (only opens when user clicks Sign In or Register)
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authModalTab, setAuthModalTab] = useState("login"); // "login" | "register"
 
-  // Automatically trigger the Login/Register popup when visiting the site unauthenticated
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      setShowAuthModal(true);
-    }
-  }, [authLoading, isAuthenticated]);
-
   // Fetch admin dashboard stats only if authenticated as administrator
+
   useEffect(() => {
     async function loadStats() {
       if (!isAdmin) return;

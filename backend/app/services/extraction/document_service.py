@@ -4,11 +4,14 @@ Validates file types, sanitizes filenames, and routes to format-specific extract
 Computes document statistics and paragraph preservation.
 """
 
+from typing import Optional
 from pathlib import Path
 from backend.app.schemas.extraction_schema import ExtractionResult
 from backend.app.services.extraction.pdf_extractor import extract_text_from_pdf
 from backend.app.services.extraction.docx_extractor import extract_text_from_docx
 from backend.app.services.extraction.txt_extractor import extract_text_from_txt
+from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+from backend.app.services.extraction.image_extractor import extract_text_from_image
 from backend.app.utils.file_utils import sanitize_filename, validate_file_metadata
 from backend.app.utils.constants import SourceType
 from backend.app.core.logging import log_event
@@ -39,10 +42,12 @@ def clean_extracted_text(text: str) -> str:
     return "\n".join(cleaned_lines).strip()
 
 
-def extract_document_text(filename: str, file_bytes: bytes) -> ExtractionResult:
+def extract_document_text(
+    filename: str, file_bytes: bytes, transcript: Optional[str] = None
+) -> ExtractionResult:
     """
     Main extraction interface.
-    Accepts original filename and binary content.
+    Accepts original filename, binary content, and optional client-side transcript.
     Returns structured ExtractionResult.
     """
     safe_name = sanitize_filename(filename)
@@ -59,6 +64,7 @@ def extract_document_text(filename: str, file_bytes: bytes) -> ExtractionResult:
         )
 
     ext = Path(safe_name).suffix.lower()
+    meta = {}
 
     # 2. Routing to extractor
     if ext == ".pdf":
@@ -70,6 +76,14 @@ def extract_document_text(filename: str, file_bytes: bytes) -> ExtractionResult:
     elif ext == ".txt":
         source_type = SourceType.TXT.value
         success, raw_text, paragraphs, error_msg = extract_text_from_txt(file_bytes)
+    elif ext in [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"]:
+        source_type = SourceType.AUDIO.value
+        success, raw_text, paragraphs, error_msg, meta = extract_text_from_audio(
+            file_bytes, safe_name, transcript=transcript
+        )
+    elif ext in [".jpg", ".jpeg", ".png", ".webp", ".bmp"]:
+        source_type = SourceType.IMAGE.value
+        success, raw_text, paragraphs, error_msg, meta = extract_text_from_image(file_bytes, safe_name)
     else:
         return ExtractionResult(
             success=False,
@@ -77,6 +91,7 @@ def extract_document_text(filename: str, file_bytes: bytes) -> ExtractionResult:
             source_type=SourceType.MANUAL.value,
             error=f"Unsupported format '{ext}'",
         )
+
 
     if not success or not raw_text.strip():
         return ExtractionResult(
@@ -107,5 +122,7 @@ def extract_document_text(filename: str, file_bytes: bytes) -> ExtractionResult:
         word_count=len(words),
         line_count=len(cleaned.splitlines()),
         paragraphs=paragraphs,
+        metadata=meta,
         error=None,
     )
+

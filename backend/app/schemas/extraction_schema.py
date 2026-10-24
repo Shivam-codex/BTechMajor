@@ -16,4 +16,6 @@ class ExtractionResult(BaseModel):
     word_count: int = 0
     line_count: int = 0
     paragraphs: List[str] = Field(default_factory=list)
+    metadata: Optional[dict] = Field(default_factory=dict)
     error: Optional[str] = None
+

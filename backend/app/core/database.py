@@ -52,5 +52,11 @@ def init_db():
             if cols and "user_id" not in cols:
                 conn.execute(text("ALTER TABLE complaints ADD COLUMN user_id INTEGER REFERENCES users(id)"))
                 conn.commit()
+            if cols and "source_file_path" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN source_file_path VARCHAR(512)"))
+                conn.commit()
+            if cols and "attachments" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN attachments JSON DEFAULT '[]'"))
+                conn.commit()
     except Exception:
         pass

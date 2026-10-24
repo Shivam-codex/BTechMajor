@@ -21,6 +21,7 @@ if str(_backend_root) not in sys.path:
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.core.config import settings
 from backend.app.core.database import init_db
@@ -106,3 +107,7 @@ app.include_router(complaints.router, prefix=settings.API_V1_STR)
 app.include_router(dashboard.router, prefix=settings.API_V1_STR)
 app.include_router(assistant.router, prefix=settings.API_V1_STR)
 app.include_router(knowledge_base.router, prefix=settings.API_V1_STR)
+
+# Mount uploads static directory for media delivery
+if settings.UPLOAD_DIR.exists():
+    app.mount(f"{settings.API_V1_STR}/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")

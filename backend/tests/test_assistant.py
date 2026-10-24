@@ -1,9 +1,19 @@
 """
-Unit tests for the Non-ML Municipal Assistant and Deterministic Response Generator.
-Verifies grounded response synthesis, source attribution, and safe fallback on irrelevant queries.
+Unit tests for the Conversational Municipal Assistant and Response Generator.
+Verifies grounded response synthesis, source attribution, safe fallback on irrelevant queries,
+and Google GenAI integration with graceful fallback behavior.
 """
 
-from backend.app.services.assistant.assistant_service import query_municipal_assistant
+from unittest.mock import MagicMock, patch
+from backend.app.services.assistant.assistant_service import (
+    query_municipal_assistant,
+    search_knowledge_base,
+)
+from backend.app.services.assistant.response_generator import (
+    generate_llm_response,
+    format_deterministic_response,
+)
+from backend.app.services.retrieval.ranking import RetrievalResult
 
 
 def test_assistant_answers_road_pothole():
@@ -37,3 +47,76 @@ def test_assistant_empty_query():
     ans = query_municipal_assistant("")
     assert not ans.has_answer
     assert "Please enter a question" in ans.answer
+
+
+def test_search_knowledge_base():
+    results = search_knowledge_base("garbage collection schedule", top_k=3)
+    assert len(results) > 0
+    assert any("garbage" in r.text.lower() or "waste" in r.text.lower() for r in results)
+
+    # Empty question
+    empty_res = search_knowledge_base("")
+    assert empty_res == []
+
+
+def test_generate_llm_response_mocked_gemini():
+    """Verifies that generate_llm_response properly calls Google GenAI SDK and formats response."""
+    sample_chunk = RetrievalResult(
+        chunk_id="KB-001_chk_01",
+        document_id="KB-001",
+        title="Pothole Repair Standard Operating Procedure",
+        category="Roads",
+        department="Roads & Infrastructure",
+        source="Municipal Charter",
+        score=0.45,
+        text="Potholes reported via portal are inspected within 24 hours and repaired within 48 hours.",
+    )
+
+    mock_response = MagicMock()
+    mock_response.text = (
+        "According to the official **Sample Municipal Knowledge Base**:\n\n"
+        "1. **Inspection**: Roads & Infrastructure Department inspects potholes within 24 hours.\n"
+        "2. **Repair**: Resolution is completed within 48 hours under standard SLA."
+    )
+
+    with patch("backend.app.services.assistant.response_generator.genai.Client") as mock_client_cls, \
+         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"):
+        
+        mock_instance = MagicMock()
+        mock_instance.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_instance
+
+        answer = generate_llm_response("How fast are potholes fixed?", [sample_chunk])
+
+        assert "Sample Municipal Knowledge Base" in answer
+        assert "Roads & Infrastructure Department" in answer
+        assert "24 hours" in answer
+        mock_instance.models.generate_content.assert_called_once()
+
+
+def test_generate_llm_response_graceful_fallback_on_api_error():
+    """Verifies that if Google GenAI API raises an exception, the system gracefully returns local template."""
+    sample_chunk = RetrievalResult(
+        chunk_id="KB-002_chk_01",
+        document_id="KB-002",
+        title="Water Supply Protocol",
+        category="Water",
+        department="Water Supply Department",
+        source="Municipal Charter",
+        score=0.5,
+        text="Major pipeline bursts are addressed within 4 to 6 hours.",
+    )
+
+    with patch("backend.app.services.assistant.response_generator.genai.Client") as mock_client_cls, \
+         patch("backend.app.services.assistant.response_generator.settings.GEMINI_API_KEY", "test-api-key"):
+        
+        mock_instance = MagicMock()
+        mock_instance.models.generate_content.side_effect = RuntimeError("API Quota Exceeded")
+        mock_client_cls.return_value = mock_instance
+
+        # Should NOT raise RuntimeError; must fall back gracefully
+        answer = generate_llm_response("What is the water burst timeline?", [sample_chunk])
+
+        assert "Sample Municipal Knowledge Base" in answer
+        assert "Water Supply Protocol" in answer
+        assert "4 to 6 hours" in answer

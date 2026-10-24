@@ -15,7 +15,10 @@ import {
   Search,
   Filter,
   Eye,
-  Inbox
+  Inbox,
+  Paperclip,
+  Camera,
+  Volume2
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { fetchApi } from "../../../utils/api";
@@ -229,6 +232,18 @@ export default function MyComplaintsPage() {
                     >
                       {cmp.priority} Priority
                     </span>
+
+                    {/* Attachment Badge */}
+                    {(cmp.source_file_name || (cmp.attachments && cmp.attachments.length > 0)) && (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                        <Paperclip className="w-3 h-3" />
+                        <span>
+                          {cmp.attachments && cmp.attachments.length > 1
+                            ? `Evidence (${cmp.attachments.length} files)`
+                            : "Evidence"}
+                        </span>
+                      </span>
+                    )}
                   </div>
                 </div>
 

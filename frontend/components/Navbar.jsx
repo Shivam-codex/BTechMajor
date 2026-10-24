@@ -49,13 +49,8 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-slate-200 shadow-sm">
-      {/* Top Academic Disclaimer Banner */}
-      <div className="bg-slate-900 text-slate-300 text-xs py-1.5 px-4 text-center font-medium flex items-center justify-center gap-2">
-        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-        <span>Academic Project: 100% Non-ML Deterministic NLP & Classical Information Retrieval System (Zero External Cloud APIs)</span>
-      </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
         <div className="flex items-center justify-between h-16">
           {/* Brand Logo */}
           <Link href="/" className="flex items-center gap-3 group">

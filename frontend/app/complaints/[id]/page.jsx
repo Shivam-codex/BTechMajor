@@ -3,27 +3,48 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { 
-  ArrowLeft, 
-  CheckCircle2, 
-  Clock, 
-  Building2, 
-  Sparkles, 
-  Tag, 
-  AlertTriangle, 
-  FileText, 
-  User, 
-  MapPin, 
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock,
+  Building2,
+  Sparkles,
+  Tag,
+  AlertTriangle,
+  FileText,
+  User,
+  MapPin,
   Calendar,
   Save,
   Check,
   Shield,
   ShieldCheck,
   Lock,
-  Info
+  Info,
+  Paperclip,
+  Camera,
+  Volume2,
+  Download,
+  ExternalLink,
+  Eye,
+  Maximize2,
+  X,
+  Music,
 } from "lucide-react";
-import { fetchApi } from "../../../utils/api";
+import { fetchApi, getApiBaseUrl } from "../../../utils/api";
 import { useAuth } from "../../../context/AuthContext";
+
+function inferMediaCategory(fileName = "", sourceType = "", explicitCategory = "") {
+  if (explicitCategory) return explicitCategory;
+  const ext = "." + (fileName.includes(".") ? fileName.split(".").pop().toLowerCase() : "");
+  if ([".jpg", ".jpeg", ".png", ".webp", ".bmp"].includes(ext) || sourceType === "IMAGE") {
+    return "image";
+  }
+  if ([".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"].includes(ext) || sourceType === "AUDIO") {
+    return "audio";
+  }
+  return "document";
+}
 
 export default function ComplaintDetailPage() {
   const params = useParams();
@@ -42,6 +63,10 @@ export default function ComplaintDetailPage() {
   const [resolutionNotes, setResolutionNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Media preview state
+  const [openPdfIndexes, setOpenPdfIndexes] = useState({});
+  const [lightboxAttachment, setLightboxAttachment] = useState(null);
 
   useEffect(() => {
     async function loadComplaint() {
@@ -91,6 +116,10 @@ export default function ComplaintDetailPage() {
     }
   };
 
+  const togglePdfPreview = (idx) => {
+    setOpenPdfIndexes((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
   const priorityColors = {
     Critical: "bg-red-100 text-red-800 border-red-200",
     High: "bg-amber-100 text-amber-800 border-amber-200",
@@ -125,26 +154,78 @@ export default function ComplaintDetailPage() {
         <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
           {errorMsg || "Complaint not found."}
         </div>
-        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600">
+        <Link
+          href={isAdmin ? "/dashboard" : "/complaints/my"}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600"
+        >
           <ArrowLeft className="w-4 h-4" />
-          <span>Return to Dashboard</span>
+          <span>{isAdmin ? "Return to Dashboard" : "Back to My Complaints"}</span>
         </Link>
       </div>
     );
   }
+
+  const apiBase = getApiBaseUrl();
+
+  // Normalize attachments array (supports multi-file complaints + legacy single-file complaints)
+  const rawAttachments = Array.isArray(complaint.attachments) ? complaint.attachments : [];
+  const normalizedAttachments =
+    rawAttachments.length > 0
+      ? rawAttachments.map((att, idx) => {
+          const attIdx = typeof att.index === "number" ? att.index : idx;
+          const fName = att.file_name || `Attachment_${attIdx + 1}`;
+          const sType = att.source_type || complaint.source_type || "DOCUMENT";
+          const mCat = inferMediaCategory(fName, sType, att.media_category);
+          const viewUrl = `${apiBase}/complaints/${complaint.id}/attachment?index=${attIdx}`;
+          const dlUrl = `${viewUrl}&download=true`;
+          return {
+            index: attIdx,
+            fileName: fName,
+            sourceType: sType,
+            mediaCategory: mCat,
+            extractedText: att.extracted_text || "",
+            viewUrl,
+            downloadUrl: dlUrl,
+            isPdf: fName.toLowerCase().endsWith(".pdf") || sType === "PDF",
+          };
+        })
+      : complaint.source_file_name || complaint.source_file_path
+      ? [
+          {
+            index: 0,
+            fileName: complaint.source_file_name || "Uploaded Evidence",
+            sourceType: complaint.source_type || "IMAGE",
+            mediaCategory: inferMediaCategory(complaint.source_file_name || "", complaint.source_type || ""),
+            extractedText: complaint.extracted_text || "",
+            viewUrl: `${apiBase}/complaints/${complaint.id}/attachment?index=0`,
+            downloadUrl: `${apiBase}/complaints/${complaint.id}/attachment?index=0&download=true`,
+            isPdf:
+              (complaint.source_file_name || "").toLowerCase().endsWith(".pdf") ||
+              complaint.source_type === "PDF",
+          },
+        ]
+      : [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Back Button & Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div className="space-y-1">
-          <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors mb-1">
+          <Link
+            href={isAdmin ? "/dashboard" : "/complaints/my"}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 transition-colors mb-1"
+          >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Back to Dashboard</span>
+            <span>{isAdmin ? "Back to Dashboard" : "Back to My Complaints"}</span>
           </Link>
+
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-slate-900 font-mono">{complaint.id}</h1>
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${statusColors[complaint.status] || "bg-slate-100 text-slate-700"}`}>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                statusColors[complaint.status] || "bg-slate-100 text-slate-700"
+              }`}
+            >
               {complaint.status}
             </span>
           </div>
@@ -171,7 +252,11 @@ export default function ComplaintDetailPage() {
                     isCompleted ? "bg-blue-600" : "bg-slate-200"
                   }`}
                 />
-                <span className={`text-[11px] font-medium block ${isCurrent ? "text-blue-700 font-bold" : "text-slate-500"}`}>
+                <span
+                  className={`text-[11px] font-medium block ${
+                    isCurrent ? "text-blue-700 font-bold" : "text-slate-500"
+                  }`}
+                >
                   {stage}
                 </span>
               </div>
@@ -187,7 +272,7 @@ export default function ComplaintDetailPage() {
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
               <FileText className="w-4 h-4 text-blue-600" />
-              <span>Grievance Description</span>
+              <span>Grievance Description & Correlated Summary</span>
             </h3>
             <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl border border-slate-100">
               {complaint.complaint_text}
@@ -196,22 +281,233 @@ export default function ComplaintDetailPage() {
             <div className="grid grid-cols-2 gap-4 pt-2 text-xs text-slate-500">
               <div className="flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-slate-400" />
-                <span>Citizen: <strong className="text-slate-700">{complaint.citizen_name || "Anonymous"}</strong></span>
+                <span>
+                  Citizen: <strong className="text-slate-700">{complaint.citizen_name || "Anonymous"}</strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                <span>Location: <strong className="text-slate-700">{complaint.location || "Central Ward"}</strong></span>
+                <span>
+                  Location: <strong className="text-slate-700">{complaint.location || "Central Ward"}</strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>Submitted: <strong className="text-slate-700">{complaint.created_at ? new Date(complaint.created_at).toLocaleString() : "Recent"}</strong></span>
+                <span>
+                  Submitted:{" "}
+                  <strong className="text-slate-700">
+                    {complaint.created_at ? new Date(complaint.created_at).toLocaleString() : "Recent"}
+                  </strong>
+                </span>
               </div>
               <div className="flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-slate-400" />
-                <span>Intake: <strong className="text-slate-700">{complaint.source_type} {complaint.source_file_name ? `(${complaint.source_file_name})` : ""}</strong></span>
+                <span>
+                  Intake:{" "}
+                  <strong className="text-slate-700">
+                    {complaint.source_type}{" "}
+                    {normalizedAttachments.length > 0 ? `(${normalizedAttachments.length} attachment${normalizedAttachments.length > 1 ? "s" : ""})` : ""}
+                  </strong>
+                </span>
               </div>
             </div>
           </div>
+
+          {/* Attached Evidence & Multimodal Media Card (Supports Multiple Images, Audio, and Documents) */}
+          {normalizedAttachments.length > 0 && (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Paperclip className="w-4 h-4 text-blue-600" />
+                  <span>
+                    Attached Evidence & Media ({normalizedAttachments.length}{" "}
+                    {normalizedAttachments.length === 1 ? "File" : "Files"})
+                  </span>
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 font-mono">
+                  {complaint.source_type}
+                </span>
+              </div>
+
+              <div className="space-y-5">
+                {normalizedAttachments.map((att) => (
+                  <div
+                    key={att.index}
+                    className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3"
+                  >
+                    {/* PHOTOGRAPHIC EVIDENCE */}
+                    {att.mediaCategory === "image" && (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Camera className="w-4 h-4 text-emerald-600" />
+                            <span className="text-xs font-semibold text-slate-800">
+                              Grievance Photo #{att.index + 1}:{" "}
+                              <span className="font-mono text-slate-600">{att.fileName}</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setLightboxAttachment(att)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                            >
+                              <Maximize2 className="w-3.5 h-3.5" />
+                              <span>Enlarge</span>
+                            </button>
+                            <a
+                              href={att.viewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>New Tab</span>
+                            </a>
+                            <a
+                              href={att.downloadUrl}
+                              download={att.fileName}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          </div>
+                        </div>
+
+                        <div
+                          onClick={() => setLightboxAttachment(att)}
+                          className="relative group rounded-xl overflow-hidden border border-slate-200 bg-white flex items-center justify-center p-3 cursor-zoom-in"
+                        >
+                          <img
+                            src={att.viewUrl}
+                            alt={att.fileName}
+                            className="max-h-96 w-auto max-w-full rounded-lg object-contain shadow-sm transition-transform duration-200 group-hover:scale-[1.01]"
+                          />
+                          <div className="absolute inset-0 bg-slate-900/0 group-hover:bg-slate-900/10 transition-colors flex items-center justify-center pointer-events-none">
+                            <span className="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-lg bg-slate-900/80 text-white text-xs font-medium flex items-center gap-1.5 shadow">
+                              <Maximize2 className="w-3.5 h-3.5" /> Click to enlarge photo
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SPOKEN AUDIO RECORDING */}
+                    {att.mediaCategory === "audio" && (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Volume2 className="w-4 h-4 text-indigo-600" />
+                            <div>
+                              <span className="text-xs font-bold text-slate-800 block">
+                                Spoken Audio Evidence #{att.index + 1}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">{att.fileName}</span>
+                            </div>
+                          </div>
+                          <a
+                            href={att.downloadUrl}
+                            download={att.fileName}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors self-start sm:self-auto"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download Recording</span>
+                          </a>
+                        </div>
+
+                        <audio controls src={att.viewUrl} className="w-full mt-1" preload="metadata" />
+                      </div>
+                    )}
+
+                    {/* DOCUMENT (PDF / DOCX / TXT) */}
+                    {att.mediaCategory === "document" && (
+                      <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                              <FileText className="w-5 h-5" />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-slate-800 block">{att.fileName}</span>
+                              <span className="text-[10px] text-slate-500 uppercase font-mono">
+                                {att.sourceType} Document
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 self-start sm:self-auto">
+                            {att.isPdf && (
+                              <button
+                                type="button"
+                                onClick={() => togglePdfPreview(att.index)}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                <span>{openPdfIndexes[att.index] ? "Hide Preview" : "Preview PDF"}</span>
+                              </button>
+                            )}
+                            <a
+                              href={att.viewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Open</span>
+                            </a>
+                            <a
+                              href={att.downloadUrl}
+                              download={att.fileName}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download</span>
+                            </a>
+                          </div>
+                        </div>
+
+                        {att.isPdf && openPdfIndexes[att.index] && (
+                          <div className="pt-2 animate-in fade-in">
+                            <iframe
+                              src={att.viewUrl}
+                              className="w-full h-96 rounded-xl border border-slate-200 bg-white"
+                              title={`PDF Document Preview - ${att.fileName}`}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Per-Attachment Extracted Content */}
+                    {att.extractedText && normalizedAttachments.length > 1 && (
+                      <div className="pt-2 border-t border-slate-200/80 space-y-1">
+                        <span className="text-[11px] font-semibold text-slate-600 block">
+                          Extracted Analysis from {att.fileName}:
+                        </span>
+                        <div className="p-2.5 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-600 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto">
+                          {att.extractedText}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* COMBINED EXTRACTED FILE CONTENT / TRANSCRIPTION */}
+              {complaint.extracted_text && (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5">
+                  <span className="text-xs font-semibold text-slate-700 block">
+                    {normalizedAttachments.length > 1
+                      ? "Combined Multimodal Extraction & Correlation Log:"
+                      : "Extracted Attachment Content:"}
+                  </span>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-600 font-mono whitespace-pre-wrap max-h-56 overflow-y-auto">
+                    {complaint.extracted_text}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Explainable AI / Rule Match Card */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -241,7 +537,10 @@ export default function ComplaintDetailPage() {
                 <span className="text-xs font-semibold text-slate-700 block">Triggered Rule Vocabulary Tokens:</span>
                 <div className="flex flex-wrap gap-1.5">
                   {complaint.matched_keywords.map((kw, i) => (
-                    <span key={i} className="px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono">
+                    <span
+                      key={i}
+                      className="px-2.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono"
+                    >
                       {kw}
                     </span>
                   ))}
@@ -264,9 +563,7 @@ export default function ComplaintDetailPage() {
             <form onSubmit={handleUpdate} className="bg-white p-6 rounded-2xl border border-indigo-200 shadow-sm space-y-4">
               <div className="flex items-center gap-2 border-b border-indigo-100 pb-2">
                 <ShieldCheck className="w-4 h-4 text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Admin Status & Routing Controls
-                </h3>
+                <h3 className="text-sm font-bold text-slate-900">Admin Status & Routing Controls</h3>
               </div>
 
               {saveSuccess && (
@@ -356,21 +653,17 @@ export default function ComplaintDetailPage() {
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
               <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                 <Clock className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">
-                  Grievance Progress Status
-                </h3>
+                <h3 className="text-sm font-bold text-slate-900">Grievance Progress Status</h3>
               </div>
 
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                   Current Stage
                 </span>
-                <span className="text-sm font-bold text-slate-900 block">
-                  {complaint.status}
-                </span>
+                <span className="text-sm font-bold text-slate-900 block">{complaint.status}</span>
                 <p className="text-xs text-slate-500">
-                  {complaint.status === "Resolved" 
-                    ? "This grievance has been resolved by the assigned municipal department." 
+                  {complaint.status === "Resolved"
+                    ? "This grievance has been resolved by the assigned municipal department."
                     : "Assigned field workers are currently addressing this municipal grievance."}
                 </p>
               </div>
@@ -397,6 +690,47 @@ export default function ComplaintDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Photo Lightbox Modal */}
+      {lightboxAttachment && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setLightboxAttachment(null)}
+        >
+          <div
+            className="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3 bg-slate-950/80 border-b border-slate-800 flex items-center justify-between text-white text-xs">
+              <span className="font-semibold truncate max-w-md">{lightboxAttachment.fileName}</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={lightboxAttachment.downloadUrl}
+                  download={lightboxAttachment.fileName}
+                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs flex items-center gap-1 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setLightboxAttachment(null)}
+                  className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 flex items-center justify-center overflow-auto max-h-[calc(90vh-60px)]">
+              <img
+                src={lightboxAttachment.viewUrl}
+                alt={lightboxAttachment.fileName}
+                className="max-h-full max-w-full object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -5,6 +5,7 @@ priority detection, and administrative lifecycle status.
 """
 
 import uuid
+from typing import Optional
 from datetime import datetime, timezone
 from sqlalchemy import Column, String, Text, Float, JSON, DateTime, Integer, ForeignKey
 from sqlalchemy.orm import relationship
@@ -38,8 +39,16 @@ class Complaint(Base, TimestampMixin):
 
     # Origin document information
     source_file_name = Column(String(255), nullable=True)
+    source_file_path = Column(String(512), nullable=True)
+    attachments = Column(JSON, default=list, nullable=False)
     source_type = Column(String(32), default=SourceType.MANUAL.value, nullable=False)
     language = Column(String(16), default="en", nullable=False)  # "en", "mr", "mixed"
+
+    @property
+    def attachment_url(self) -> Optional[str]:
+        if self.source_file_name or self.source_file_path or (self.attachments and len(self.attachments) > 0):
+            return f"/api/complaints/{self.id}/attachment"
+        return None
 
     # Deterministic Rule-Based Classification Results
     category = Column(String(64), default=ComplaintCategory.OTHER.value, nullable=False, index=True)
@@ -77,6 +86,9 @@ class Complaint(Base, TimestampMixin):
             "complaint_text": self.complaint_text,
             "extracted_text": self.extracted_text,
             "source_file_name": self.source_file_name,
+            "source_file_path": self.source_file_path,
+            "attachment_url": self.attachment_url,
+            "attachments": self.attachments or [],
             "source_type": self.source_type,
             "language": self.language,
             "category": self.category,

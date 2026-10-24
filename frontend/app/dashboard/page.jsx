@@ -19,7 +19,10 @@ import {
   ShieldAlert,
   LogIn,
   ShieldCheck,
-  Building2
+  Building2,
+  Camera,
+  Volume2,
+  Paperclip
 } from "lucide-react";
 import { fetchApi } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
@@ -360,6 +363,7 @@ export default function AdminDashboardPage() {
                 <th className="py-3.5 px-4">Complaint ID</th>
                 <th className="py-3.5 px-4">Category</th>
                 <th className="py-3.5 px-4">Grievance Preview</th>
+                <th className="py-3.5 px-4">Evidence</th>
                 <th className="py-3.5 px-4">Priority</th>
                 <th className="py-3.5 px-4">Rule Score</th>
                 <th className="py-3.5 px-4">Status</th>
@@ -369,7 +373,7 @@ export default function AdminDashboardPage() {
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {complaints.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-400">
+                  <td colSpan={8} className="py-10 text-center text-slate-400">
                     No complaints found matching the specified criteria.
                   </td>
                 </tr>
@@ -379,6 +383,38 @@ export default function AdminDashboardPage() {
                     <td className="py-3 px-4 font-mono font-bold text-blue-700">{c.id}</td>
                     <td className="py-3 px-4 font-medium text-slate-900">{c.category}</td>
                     <td className="py-3 px-4 max-w-xs truncate text-slate-600">{c.complaint_text}</td>
+                    <td className="py-3 px-4">
+                      {c.source_file_name || (c.attachments && c.attachments.length > 0) ? (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            c.source_type === "IMAGE" || c.source_type === "MULTIMODAL" || [".jpg", ".jpeg", ".png", ".webp", ".bmp"].some(ext => (c.source_file_name || "").toLowerCase().endsWith(ext))
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : c.source_type === "AUDIO" || [".mp3", ".wav", ".m4a", ".ogg"].some(ext => (c.source_file_name || "").toLowerCase().endsWith(ext))
+                              ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                              : "bg-blue-50 text-blue-700 border border-blue-200"
+                          }`}>
+                            {c.source_type === "IMAGE" || c.source_type === "MULTIMODAL" || [".jpg", ".jpeg", ".png", ".webp", ".bmp"].some(ext => (c.source_file_name || "").toLowerCase().endsWith(ext)) ? (
+                              <>
+                                <Camera className="w-3 h-3" />
+                                <span>{c.attachments?.length > 1 ? `Photo +${c.attachments.length - 1}` : "Photo"}</span>
+                              </>
+                            ) : c.source_type === "AUDIO" || [".mp3", ".wav", ".m4a", ".ogg"].some(ext => (c.source_file_name || "").toLowerCase().endsWith(ext)) ? (
+                              <>
+                                <Volume2 className="w-3 h-3" />
+                                <span>Audio</span>
+                              </>
+                            ) : (
+                              <>
+                                <Paperclip className="w-3 h-3" />
+                                <span>{c.source_type || "Doc"}</span>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-mono">Text only</span>
+                      )}
+                    </td>
                     <td className="py-3 px-4">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${priorityColors[c.priority]}`}>
                         {c.priority}

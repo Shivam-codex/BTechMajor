@@ -51,6 +51,9 @@ class SourceType(str, Enum):
     PDF = "PDF"
     DOCX = "DOCX"
     TXT = "TXT"
+    AUDIO = "AUDIO"
+    IMAGE = "IMAGE"
+    MULTIMODAL = "MULTIMODAL"
 
 
 # Category to Department deterministic mapping
@@ -68,9 +71,26 @@ CATEGORY_DEPARTMENT_MAPPING = {
 
 # File Upload Configuration
 MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
-ALLOWED_FILE_EXTENSIONS = {".pdf", ".docx", ".txt"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac"}
+DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt"}
+ALLOWED_FILE_EXTENSIONS = IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | DOCUMENT_EXTENSIONS
 ALLOWED_MIME_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "text/plain",
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mp3",
+    "audio/m4a",
+    "audio/x-m4a",
+    "audio/ogg",
+    "audio/webm",
+    "audio/aac",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/bmp",
 }
+
