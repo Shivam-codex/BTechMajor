@@ -25,6 +25,7 @@ import {
   Image as ImageIcon,
   Camera,
   MapPin,
+  Navigation,
   Crosshair,
   AlertTriangle,
   RefreshCw,
