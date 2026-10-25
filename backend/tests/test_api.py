@@ -13,7 +13,7 @@ from backend.app.core.database import get_db
 
 from backend.app.core.security import hash_password, create_access_token
 from backend.app.models.user import User
-from backend.tests.test_extraction import _generate_test_wav
+from backend.tests.test_extraction import _generate_test_wav, _transcode_audio
 
 
 @pytest.fixture(autouse=True)
@@ -301,6 +301,77 @@ def test_inspect_uploaded_audio_with_client_transcript(client):
     assert "10" not in res["filtered_keywords"]
     assert "45" not in res["filtered_keywords"]
     assert "recorded" not in res["filtered_keywords"]
+
+
+@pytest.mark.parametrize("container,mime", [("mp3", "audio/mpeg"), ("m4a", "audio/mp4")])
+def test_inspect_uploaded_audio_transcript_display(client, container, mime):
+    """Uploaded MP3/M4A audio must return the extracted transcript and downstream predictions."""
+    payload = _transcode_audio(_generate_test_wav(0.6, silent=False), container)
+    if payload is None:
+        pytest.skip(f"Installed FFmpeg build has no {container} encoder to synthesise a fixture.")
+
+    files = {"file": (f"citizen_uploaded_voice.{container}", io.BytesIO(payload), mime)}
+    response = client.post("/api/complaints/inspect-audio", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["speech_detected"] is True
+    assert data["transcription"] == "Street light bulb broken and sparking exposed wire on road"
+    assert data["transcription_source"] == "faster_whisper_en"
+    assert data["transcription_error"] is None
+    assert data["detected_language"] == "en"
+    assert data["category_hint"] == "Street Light"
+    assert data["predicted_priority"] == "Critical"
+    assert data["word_count"] > 0
+
+
+def test_inspect_uploaded_audio_corrupted_returns_422(client):
+    """A corrupted / undecodable upload must fail with a clear 4xx error, not a fake transcript."""
+    corrupted = b"NOT_A_VALID_AUDIO_CONTAINER_OR_BITSTREAM" * 3
+    files = {"file": ("broken_recording.mp3", io.BytesIO(corrupted), "audio/mpeg")}
+    response = client.post("/api/complaints/inspect-audio", files=files)
+    assert response.status_code == 422
+    assert "audio" in response.json()["detail"].lower()
+
+
+def test_inspect_uploaded_audio_silent_recording_returns_error(client):
+    """A silent recording must be rejected with an explicit 'silent' message."""
+    files = {"file": ("silent_mic.wav", io.BytesIO(_generate_test_wav(1.0, silent=True)), "audio/wav")}
+    response = client.post("/api/complaints/inspect-audio", files=files)
+    assert response.status_code == 422
+    assert "silent" in response.json()["detail"].lower()
+
+
+def test_inspect_uploaded_audio_no_speech_reports_error(client):
+    """When VAD finds no speech, the endpoint reports speech_detected=false plus a clear error."""
+    from unittest.mock import MagicMock
+    from backend.app.services.extraction.audio_extractor import set_mock_whisper_model
+
+    empty_model = MagicMock()
+    empty_info = MagicMock()
+    empty_info.language = "en"
+    empty_model.transcribe.return_value = ([], empty_info)
+    set_mock_whisper_model(empty_model)
+
+    files = {"file": ("quiet_room_voice.wav", io.BytesIO(_generate_test_wav(0.6, silent=False)), "audio/wav")}
+    response = client.post("/api/complaints/inspect-audio", files=files)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["speech_detected"] is False
+    assert "no intelligible speech" in (data["transcription_error"] or "").lower()
+    assert "no_speech_detected_in_audio" in data["uncertainty_indicators"]
+
+
+def test_audio_upload_assigns_department_and_priority(client):
+    """An uploaded audio complaint must flow through the shared classification pipeline."""
+    files = {"file": ("voice_note_recording.wav", io.BytesIO(_generate_test_wav(0.6, silent=False)), "audio/wav")}
+    data = {"citizen_name": "Test Citizen", "location": "Baner Road"}
+    response = client.post("/api/complaints/upload", files=files, data=data)
+    assert response.status_code == 201
+    res = response.json()
+    assert res["source_type"] == "AUDIO"
+    assert res["category"] == "Street Light"
+    assert res["department"] == "Electrical Department"
+    assert res["priority"] == "Critical"
 
 
 def test_upload_with_audio_transcripts_json(client):

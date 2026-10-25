@@ -140,6 +140,8 @@ async def inspect_uploaded_audio(
         "uncertainty_indicators": meta.get("uncertainty_indicators", []),
         "detected_language": meta.get("detected_language", "en"),
         "transcription_source": meta.get("transcription_source", "whisper_base"),
+        "transcription_error": meta.get("transcription_error"),
+        "speech_detected": meta.get("speech_detected", False),
         "spoken_location": meta.get("spoken_location"),
         "category_hint": meta.get("category_hint", "Other"),
         "duration_seconds": meta.get("duration_seconds"),

@@ -500,6 +500,9 @@ export default function CitizenComplaintPage() {
       }
     } catch (err) {
       console.warn("Audio inspection warning:", err);
+      setErrorMsg(
+        `Could not transcribe audio '${file.name}': ${err?.message || "Unknown transcription error"}. You can still type the spoken words manually in the box below the player.`
+      );
       setSupportingAttachments((prev) =>
         prev.map((item) =>
           item.id === attachmentId ? { ...item, isAnalyzing: false } : item
@@ -1545,6 +1548,20 @@ export default function CitizenComplaintPage() {
                               className="w-full text-xs p-2 rounded-lg border border-slate-200 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 outline-none resize-none text-slate-800"
                             />
                           </div>
+
+                          {/* Speech Transcription Failure / No-Speech Notice */}
+                          {item.analysis.transcription_error && (
+                            <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-1.5 text-amber-800 text-[11px]">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-bold">Speech not extracted: </span>
+                                <span>{item.analysis.transcription_error}</span>
+                                <span className="block mt-0.5 text-amber-700">
+                                  Type the spoken words manually or use &ldquo;Dictate&rdquo;, then click &ldquo;Re-extract Words&rdquo;.
+                                </span>
+                              </div>
+                            </div>
+                          )}
 
                           {/* NLP Extracted Words & Keywords */}
                           {item.analysis.filtered_keywords && item.analysis.filtered_keywords.length > 0 ? (

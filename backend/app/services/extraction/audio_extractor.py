@@ -67,24 +67,56 @@ def set_mock_whisper_model(mock_model):
     _cached_whisper_model = mock_model
 
 
+def _extract_wav_pcm(wav_bytes: bytes) -> bytes:
+    """
+    Returns the raw PCM payload of a RIFF/WAVE buffer by walking its chunk list.
+
+    All formats are normalised through FFmpeg to 16 kHz mono signed 16-bit PCM, so the
+    header is always canonical. The declared `data` chunk size is honoured instead of
+    assuming a fixed 44-byte header, which is what makes zero-sample decodes detectable.
+    """
+    if len(wav_bytes) < 12 or wav_bytes[0:4] != b"RIFF" or wav_bytes[8:12] != b"WAVE":
+        return wav_bytes[44:] if len(wav_bytes) > 44 else b""
+
+    offset = 12
+    while offset + 8 <= len(wav_bytes):
+        chunk_id = wav_bytes[offset:offset + 4]
+        chunk_size = struct.unpack("<I", wav_bytes[offset + 4:offset + 8])[0]
+        payload_start = offset + 8
+        if chunk_id == b"data":
+            return wav_bytes[payload_start:payload_start + chunk_size]
+        offset = payload_start + chunk_size + (chunk_size % 2)  # RIFF chunks are word-aligned
+    return b""
+
+
 def convert_to_wav_pcm(file_bytes: bytes) -> Tuple[bool, bytes, str]:
     """
-    Decodes any audio file or MP4 video container to 16kHz mono 16-bit PCM WAV in memory using imageio-ffmpeg.
+    Decodes any uploaded audio container to 16kHz mono 16-bit PCM WAV in memory using imageio-ffmpeg.
     Returns: (success, wav_bytes, error_or_notice)
     """
     if not file_bytes or len(file_bytes) < 16:
         return False, b"", "Empty or invalid audio bytes provided."
 
+    tmp_path = None
     try:
         import imageio_ffmpeg
+        import tempfile
+        import os
+
+        # FFmpeg is given a real file rather than stdin: seekable input is mandatory for the
+        # MP4/M4A/AAC family, whose sample tables live in a trailing `moov` atom. On a
+        # non-seekable pipe those containers decode to an empty stream while still exiting 0.
+        fd, tmp_path = tempfile.mkstemp(prefix="sc_audio_", suffix=".upload")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(file_bytes)
 
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         cmd = [
             ffmpeg_exe,
             "-y",
             "-loglevel", "error",
-            "-i", "pipe:0",
-            "-vn",              # strip video track if present (e.g. mp4)
+            "-i", tmp_path,
+            "-vn",              # ignore any video track (e.g. inside an mp4 container)
             "-f", "wav",
             "-ar", "16000",     # resample to standard 16kHz mono
             "-ac", "1",
@@ -93,29 +125,23 @@ def convert_to_wav_pcm(file_bytes: bytes) -> Tuple[bool, bytes, str]:
         ]
         proc = subprocess.run(
             cmd,
-            input=file_bytes,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=True,
-            timeout=12,
+            timeout=30,
         )
         wav_bytes = proc.stdout
-        if not wav_bytes or len(wav_bytes) <= 44:
-            return False, b"", "No audible audio stream found in container."
+        raw_samples = _extract_wav_pcm(wav_bytes)
+        num_samples = len(raw_samples) // 2
+        if num_samples == 0:
+            return False, b"", "No audible audio stream found in container. The file may be corrupted or use an unsupported codec."
 
         # Compute RMS energy from PCM samples to detect silent recordings
-        data_idx = wav_bytes.find(b"data")
-        if data_idx != -1:
-            raw_samples = wav_bytes[data_idx + 8:]
-        else:
-            raw_samples = wav_bytes[44:]
-        num_samples = len(raw_samples) // 2
-        if num_samples > 0:
-            shorts = struct.unpack(f"<{num_samples}h", raw_samples[:num_samples * 2])
-            sum_sq = sum(float(s) * float(s) for s in shorts)
-            rms = math.sqrt(sum_sq / float(num_samples))
-            if rms < 15.0:  # virtually dead silence / no microphone signal
-                return True, wav_bytes, "SILENT_RECORDING"
+        shorts = struct.unpack(f"<{num_samples}h", raw_samples[:num_samples * 2])
+        sum_sq = sum(float(s) * float(s) for s in shorts)
+        rms = math.sqrt(sum_sq / float(num_samples))
+        if rms < 15.0:  # virtually dead silence / no microphone signal
+            return True, wav_bytes, "SILENT_RECORDING"
 
         return True, wav_bytes, ""
 
@@ -126,6 +152,32 @@ def convert_to_wav_pcm(file_bytes: bytes) -> Tuple[bool, bytes, str]:
     except Exception as exc:
         logger.debug("Audio conversion exception: %s", exc)
         return False, b"", f"Audio conversion error: {str(exc)}"
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def decode_wav_pcm_to_float32(wav_bytes: bytes):
+    """
+    Converts FFmpeg-decoded 16 kHz mono 16-bit PCM WAV bytes into the float32
+    numpy waveform that Faster-Whisper expects.
+
+    Faster-Whisper normally resamples raw container bytes through PyAV
+    (`faster_whisper.audio.decode_audio`). That internal call is coupled to PyAV's
+    `av.open(..., metadata_errors=...)` signature, which newer PyAV releases dropped,
+    so passing a stream to `transcribe()` raises TypeError on affected installs.
+    FFmpeg has already produced canonical 16 kHz mono PCM here, so the samples are
+    converted straight to a waveform array and PyAV decoding is bypassed entirely.
+    """
+    import numpy as np
+
+    raw_pcm = _extract_wav_pcm(wav_bytes)
+    if len(raw_pcm) % 2:  # PCM16 frames are 2 bytes; drop any stray trailing byte
+        raw_pcm = raw_pcm[:-1]
+    return np.frombuffer(raw_pcm, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 def _inspect_audio_metadata(file_bytes: bytes, ext: str) -> Dict[str, Any]:
@@ -170,6 +222,8 @@ def extract_text_from_audio(
         **_inspect_audio_metadata(file_bytes, ext),
         "transcription": "",
         "transcription_source": "none",
+        "transcription_error": None,
+        "speech_detected": False,
         "detected_language": "en",
         "category_hint": "Other",
         "audio_priority": "Medium",
@@ -198,29 +252,44 @@ def extract_text_from_audio(
             audio_meta["transcription_source"] = "silent_audio"
             return False, "", [], "Silent recording detected: audio contains no audible speech.", audio_meta
 
-        # Calculate exact duration from converted 16kHz WAV
-        if len(wav_pcm_bytes) > 44:
-            audio_meta["duration_seconds"] = round((len(wav_pcm_bytes) - 44) / 32000.0, 2)
+        # Calculate exact duration from the converted 16kHz mono PCM samples
+        audio_meta["duration_seconds"] = round((len(_extract_wav_pcm(wav_pcm_bytes)) // 2) / 16000.0, 2)
 
-        # Transcribe with local Faster-Whisper
+        # Transcribe with local Faster-Whisper (CPU, INT8, multilingual)
         whisper = get_whisper_model()
-        if whisper is not None:
+        if whisper is None:
+            audio_meta["transcription_error"] = (
+                "Local speech recognition is unavailable: the Faster-Whisper model could not be loaded."
+            )
+            audio_meta["uncertainty_indicators"].append("whisper_model_unavailable")
+            logger.warning("Faster-Whisper model unavailable; cannot transcribe '%s'.", clean_name)
+        else:
             try:
-                segments, info = whisper.transcribe(
-                    io.BytesIO(wav_pcm_bytes),
-                    beam_size=3,
-                    language=None,  # auto-detect language (supports Marathi, Hindi, English)
-                    vad_filter=True,
-                )
-                text_parts = [seg.text.strip() for seg in segments if seg.text and seg.text.strip()]
-                extracted_speech = " ".join(text_parts).strip()
+                audio_array = decode_wav_pcm_to_float32(wav_pcm_bytes)
+                if audio_array.size == 0:
+                    audio_meta["transcription_error"] = "No intelligible speech detected in the recording."
+                    audio_meta["uncertainty_indicators"].append("no_speech_detected_in_audio")
+                else:
+                    segments, info = whisper.transcribe(
+                        audio_array,
+                        beam_size=3,
+                        language=None,  # auto-detect language (supports Marathi, Hindi, English)
+                        vad_filter=True,
+                    )
+                    text_parts = [seg.text.strip() for seg in segments if seg.text and seg.text.strip()]
+                    extracted_speech = " ".join(text_parts).strip()
 
-                if extracted_speech:
-                    audio_meta["transcription"] = extracted_speech
-                    audio_meta["detected_language"] = getattr(info, "language", "en")
-                    audio_meta["transcription_source"] = f"faster_whisper_{audio_meta['detected_language']}"
+                    if extracted_speech:
+                        audio_meta["transcription"] = extracted_speech
+                        audio_meta["speech_detected"] = True
+                        audio_meta["detected_language"] = getattr(info, "language", "en") or "en"
+                        audio_meta["transcription_source"] = f"faster_whisper_{audio_meta['detected_language']}"
+                    else:
+                        audio_meta["transcription_error"] = "No intelligible speech detected in the recording."
+                        audio_meta["uncertainty_indicators"].append("no_speech_detected_in_audio")
             except Exception as exc:
-                logger.debug("Faster-Whisper transcription failed: %s", exc)
+                logger.warning("Faster-Whisper transcription failed for '%s': %s", clean_name, exc)
+                audio_meta["transcription_error"] = f"Speech recognition failed: {exc}"
                 audio_meta["uncertainty_indicators"].append("faster_whisper_transcription_error")
 
     # 3. Filename semantic token heuristic as fallback

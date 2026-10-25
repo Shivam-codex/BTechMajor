@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "1. Run FastAPI Backend",
+      "type": "shell",
+      "command": ".\\.venv\\Scripts\\python.exe -m uvicorn backend.app.main:app --reload --host 127.0.0.1 --port 8000",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "servers",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "2. Run Next.js Frontend",
+      "type": "shell",
+      "command": "npm --prefix frontend run dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "group": "servers",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "3. Run Ollama Gemma 3",
+      "type": "shell",
+      "command": "ollama run gemma3:4b",
+      "problemMatcher": [],
+      "presentation": {
+        "group": "servers",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Start Full Smart City Project",
+      "dependsOn": [
+        "1. Run FastAPI Backend",
+        "2. Run Next.js Frontend"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}

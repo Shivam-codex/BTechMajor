@@ -3,6 +3,7 @@ Unit tests for document extraction services (PDF, DOCX, TXT).
 Verifies parsing accuracy, security checks, and error boundaries.
 """
 
+import pytest
 from unittest.mock import patch
 from backend.app.services.extraction.document_service import extract_document_text
 from backend.app.utils.file_utils import sanitize_filename, validate_file_metadata
@@ -253,6 +254,274 @@ def test_audio_verbatim_speech_transcript_and_nlp_words():
     assert "wire" in meta["filtered_keywords"] or "electrical" in meta["filtered_keywords"]
     assert len(meta["hazard_keywords"]) > 0
     assert "primary school" in full_text.lower() or "station road" in full_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Uploaded-audio decoding + Faster-Whisper transcription pipeline tests
+# (covers MP3 / WAV / M4A / WEBM uploads, Marathi + English speech, and the
+#  transcription error/notice paths surfaced to the UI.)
+# ---------------------------------------------------------------------------
+
+def _transcode_audio(wav_bytes: bytes, container: str) -> bytes:
+    """
+    Transcodes a 16 kHz mono WAV buffer into the requested container with the locally
+    installed FFmpeg build (imageio-ffmpeg). Returns None when the codec is missing
+    from the installed build so callers can skip instead of reporting a false failure.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+    codec_args = {
+        "mp3": ["-acodec", "libmp3lame"],
+        "m4a": ["-acodec", "aac"],
+        "webm": ["-acodec", "libopus"],
+    }.get(container)
+    if codec_args is None:
+        return None
+
+    tmp_in = None
+    tmp_out = None
+    try:
+        fd, tmp_in = tempfile.mkstemp(prefix="sc_test_in_", suffix=".wav")
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(wav_bytes)
+        fd, tmp_out = tempfile.mkstemp(prefix="sc_test_out_", suffix=f".{container}")
+        os.close(fd)
+
+        proc = subprocess.run(
+            [ffmpeg_exe, "-y", "-loglevel", "error", "-i", tmp_in, *codec_args, tmp_out],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+        if proc.returncode != 0:
+            return None
+        with open(tmp_out, "rb") as fh:
+            data = fh.read()
+        return data or None
+    except Exception:
+        return None
+    finally:
+        for path in (tmp_in, tmp_out):
+            if path:
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+
+
+@pytest.fixture
+def whisper_mock():
+    """Injects a mock Faster-Whisper model (no model download / no inference) and restores it."""
+    from unittest.mock import MagicMock
+    from backend.app.services.extraction import audio_extractor
+
+    previous = audio_extractor._cached_whisper_model
+
+    def _install(text="", language="en", segments=None, side_effect=None):
+        mock = MagicMock()
+        if side_effect is not None:
+            mock.transcribe.side_effect = side_effect
+        else:
+            if segments is None:
+                segments = []
+                if text:
+                    seg = MagicMock()
+                    seg.text = f" {text}"
+                    segments = [seg]
+            info = MagicMock()
+            info.language = language
+            mock.transcribe.return_value = (segments, info)
+        audio_extractor.set_mock_whisper_model(mock)
+        return mock
+
+    yield _install
+    audio_extractor.set_mock_whisper_model(previous)
+
+
+def test_convert_to_wav_pcm_and_float32_decoding():
+    from backend.app.services.extraction.audio_extractor import (
+        convert_to_wav_pcm,
+        decode_wav_pcm_to_float32,
+        _extract_wav_pcm,
+    )
+
+    wav_bytes = _generate_test_wav(0.5, silent=False)
+    ok, pcm_wav, notice = convert_to_wav_pcm(wav_bytes)
+    assert ok
+    assert notice == ""
+    assert len(_extract_wav_pcm(pcm_wav)) > 0
+
+    samples = decode_wav_pcm_to_float32(pcm_wav)
+    assert samples.dtype.name == "float32"
+    assert samples.size >= 7000  # 0.5 s of 16 kHz mono audio
+    assert samples.min() >= -1.0
+    assert samples.max() <= 1.0
+
+
+@pytest.mark.parametrize("container", ["wav", "mp3", "m4a", "webm"])
+def test_convert_to_wav_pcm_uploaded_containers(container):
+    """FFmpeg must decode every supported uploaded container into non-empty 16 kHz PCM."""
+    from backend.app.services.extraction.audio_extractor import (
+        convert_to_wav_pcm,
+        decode_wav_pcm_to_float32,
+    )
+
+    if container == "wav":
+        payload = _generate_test_wav(0.6, silent=False)
+    else:
+        payload = _transcode_audio(_generate_test_wav(0.6, silent=False), container)
+        if payload is None:
+            pytest.skip(f"Installed FFmpeg build has no {container} encoder to synthesise a fixture.")
+
+    ok, pcm_wav, notice = convert_to_wav_pcm(payload)
+    assert ok, f"{container} upload failed to decode: {notice}"
+    assert notice == ""
+    assert decode_wav_pcm_to_float32(pcm_wav).size > 1000
+
+
+@pytest.mark.parametrize("container", ["wav", "mp3", "m4a"])
+def test_uploaded_audio_transcription_english(container, whisper_mock):
+    """MP3/WAV/M4A uploads are transcribed by the mocked model and classified downstream."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+
+    spoken = "Street light bulb broken and sparking exposed wire on road"
+    if container == "wav":
+        payload = _generate_test_wav(0.6, silent=False)
+    else:
+        payload = _transcode_audio(_generate_test_wav(0.6, silent=False), container)
+        if payload is None:
+            pytest.skip(f"Installed FFmpeg build has no {container} encoder to synthesise a fixture.")
+
+    whisper_mock(text=spoken, language="en")
+    ok, full_text, paragraphs, err, meta = extract_text_from_audio(payload, f"citizen_voice.{container}")
+
+    assert ok and err == ""
+    assert meta["speech_detected"] is True
+    assert meta["transcription"] == spoken
+    assert meta["transcription_error"] is None
+    assert meta["detected_language"] == "en"
+    assert meta["transcription_source"] == "faster_whisper_en"
+    assert meta["duration_seconds"] is not None
+    # Downstream deterministic classification runs on the extracted transcript
+    assert meta["category_hint"] == "Street Light"
+    assert meta["audio_priority"] == "Critical"
+    assert "exposed wire" in meta["hazard_keywords"]
+    assert spoken in full_text  # transcript is rendered into the complaint dossier
+
+
+def test_uploaded_audio_transcription_marathi(whisper_mock):
+    """Marathi speech is transcribed verbatim (Devanagari preserved) and classified."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+
+    spoken = "स्टेशन रोडवर खूप मोठा खड्डा आहे, गाड्या उलटत आहेत"
+    whisper_mock(text=spoken, language="mr")
+    ok, full_text, paragraphs, err, meta = extract_text_from_audio(
+        _generate_test_wav(0.6, silent=False), "marathi_voice_complaint.wav"
+    )
+
+    assert ok
+    assert meta["speech_detected"] is True
+    assert meta["transcription"] == spoken
+    assert meta["detected_language"] == "mr"
+    assert meta["transcription_source"] == "faster_whisper_mr"
+    assert meta["category_hint"] == "Road/Pothole"
+    assert meta["audio_priority"] == "High"
+    assert "खड्डा" in full_text
+
+
+def test_audio_transcript_downstream_department_and_priority(whisper_mock):
+    """Whisper transcript must drive category -> department routing and priority."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+    from backend.app.services.classification.department_router import assign_department
+
+    whisper_mock(text="Street light bulb broken and sparking exposed wire on road", language="en")
+    ok, _text, _paras, _err, meta = extract_text_from_audio(
+        _generate_test_wav(0.6, silent=False), "voice_note.wav"
+    )
+
+    assert ok
+    department, reason = assign_department(meta["category_hint"])
+    assert meta["category_hint"] == "Street Light"
+    assert department == "Electrical Department"
+    assert "Electrical Department" in reason
+    assert meta["audio_priority"] == "Critical"
+
+
+def test_marathi_audio_transcript_routes_to_drainage_department(whisper_mock):
+    """Marathi audio transcript routes to the correct municipal department."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+    from backend.app.services.classification.department_router import assign_department
+
+    whisper_mock(
+        text="बाजारामागे दहा दिवसांपासून कचरा उचलला नाही, गटार तुंबले आहे",
+        language="mr",
+    )
+    ok, _text, _paras, _err, meta = extract_text_from_audio(
+        _generate_test_wav(0.6, silent=False), "kacra_voice.wav"
+    )
+
+    assert ok
+    assert meta["category_hint"] == "Drainage/Sewerage"
+    department, _reason = assign_department(meta["category_hint"])
+    assert department == "Drainage Department"
+
+
+def test_audio_no_speech_detected_reports_clear_error(whisper_mock):
+    """A decode that yields no speech must surface a clear, non-fatal error."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+
+    whisper_mock(segments=[], language="en")  # VAD filtered every frame out
+    ok, _text, _paras, _err, meta = extract_text_from_audio(
+        _generate_test_wav(0.6, silent=False), "empty_room_recording.wav"
+    )
+
+    assert ok  # dossier is still returned so the citizen can type words manually
+    assert meta["speech_detected"] is False
+    assert meta["transcription_error"] == "No intelligible speech detected in the recording."
+    assert "no_speech_detected_in_audio" in meta["uncertainty_indicators"]
+    assert meta["transcription_source"] == "filename_semantic_tokens"
+
+
+def test_audio_whisper_model_unavailable_reports_error():
+    """When the local model cannot load, a clear error must be reported (not a fake transcript)."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+
+    with patch(
+        "backend.app.services.extraction.audio_extractor.get_whisper_model",
+        return_value=None,
+    ):
+        ok, _text, _paras, _err, meta = extract_text_from_audio(
+            _generate_test_wav(0.6, silent=False), "power_cut_report.wav"
+        )
+
+    assert ok
+    assert meta["speech_detected"] is False
+    assert "unavailable" in (meta["transcription_error"] or "").lower()
+    assert "whisper_model_unavailable" in meta["uncertainty_indicators"]
+    assert meta["transcription_source"] == "filename_semantic_tokens"
+
+
+def test_audio_transcription_failure_reports_error(whisper_mock):
+    """An unexpected inference crash must be captured as a user-visible transcription error."""
+    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+
+    whisper_mock(side_effect=RuntimeError("decoder exploded"))
+    ok, _text, _paras, _err, meta = extract_text_from_audio(
+        _generate_test_wav(0.6, silent=False), "garbage_voice.wav"
+    )
+
+    assert ok
+    assert meta["speech_detected"] is False
+    assert "speech recognition failed" in (meta["transcription_error"] or "").lower()
+    assert "faster_whisper_transcription_error" in meta["uncertainty_indicators"]
 
 
 def test_ollama_vision_mock_and_fallback():
