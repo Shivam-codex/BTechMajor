@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import API_BASE_URL, { fetchApi } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
+import LocationPickerMap from "../../components/LocationPickerMap";
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
 const AUDIO_EXTS = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".mp4"];
@@ -80,10 +81,15 @@ export default function CitizenComplaintPage() {
   const [citizenName, setCitizenName] = useState("");
   const [location, setLocation] = useState("");
 
-  // Location auto-detection states
+  // Location auto-detection & High Accuracy GPS states
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [deviceLocationName, setDeviceLocationName] = useState("");
-  const [locationSource, setLocationSource] = useState(null); // 'DEVICE' | 'IMAGE' | 'AUDIO' | 'MANUAL'
+  const [locationSource, setLocationSource] = useState("manual_text"); // 'device_gps' | 'image_exif' | 'manual_map' | 'manual_text'
+  const [coords, setCoords] = useState(null); // { latitude, longitude, accuracy, capturedAt, source, address }
+  const [deviceGpsSaved, setDeviceGpsSaved] = useState(null);
+  const [photoGpsAvailable, setPhotoGpsAvailable] = useState(null);
+  const [locationError, setLocationError] = useState("");
+  const [showMap, setShowMap] = useState(true);
 
   // Voice Typing state (dictates text into description)
   const [isListening, setIsListening] = useState(false);
@@ -166,45 +172,119 @@ export default function CitizenComplaintPage() {
     };
   }, []);
 
-  // Device Geolocation Auto-Detection
-  const detectUserDeviceLocation = () => {
-    if (typeof window === "undefined" || !navigator.geolocation) return;
+  // High-Accuracy Device Geolocation with error handling and retry
+  const detectUserDeviceLocation = (isUserAction = false) => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      if (isUserAction) {
+        setLocationError("Geolocation is not supported by your browser.");
+      }
+      return;
+    }
 
     setIsDetectingLocation(true);
+    setLocationError("");
+
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { latitude, longitude } = position.coords;
+        const { latitude, longitude, accuracy } = position.coords;
+        const capturedAt = new Date(position.timestamp || Date.now()).toISOString();
+        const latFixed = Number(latitude.toFixed(6));
+        const lonFixed = Number(longitude.toFixed(6));
+        const accFixed = typeof accuracy === "number" && !isNaN(accuracy) ? Number(accuracy.toFixed(1)) : null;
+
+        let readableAddress = "";
         try {
-          const response = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
-          );
-          if (response.ok) {
-            const data = await response.json();
-            if (data?.display_name) {
-              const formatted = data.display_name;
-              setDeviceLocationName(formatted);
-              setLocation((prev) => (!prev || prev.includes("Location") || prev.includes("Lat:") ? formatted : prev));
-              setLocationSource((prev) => (prev === "IMAGE" || prev === "AUDIO" ? prev : "DEVICE"));
-              setIsDetectingLocation(false);
-              return;
-            }
+          const res = await fetchApi(`/complaints/reverse-geocode?lat=${latFixed}&lon=${lonFixed}`);
+          if (res?.address) {
+            readableAddress = res.address;
           }
         } catch (err) {
-          console.warn("Reverse geocode fetch failed, using coordinates:", err);
+          console.warn("Reverse geocode fetch failed:", err);
         }
 
-        const coordStr = `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)} (Device Location)`;
-        setDeviceLocationName(coordStr);
-        setLocation((prev) => (!prev ? coordStr : prev));
-        setLocationSource((prev) => (prev === "IMAGE" || prev === "AUDIO" ? prev : "DEVICE"));
+        const resolved = readableAddress || `Lat: ${latFixed.toFixed(5)}, Lon: ${lonFixed.toFixed(5)}`;
+        const devGps = {
+          latitude: latFixed,
+          longitude: lonFixed,
+          accuracy: accFixed,
+          capturedAt,
+          address: resolved,
+          source: "device_gps",
+        };
+
+        setDeviceGpsSaved(devGps);
+        setDeviceLocationName(resolved);
+
+        // If user hasn't selected another source or clicked detect explicitly, set active location
+        if (!coords || locationSource === "device_gps" || isUserAction) {
+          setCoords(devGps);
+          setLocation(resolved);
+          setLocationSource("device_gps");
+        }
         setIsDetectingLocation(false);
       },
       (err) => {
-        console.warn("Geolocation permission denied or unavailable:", err.message);
         setIsDetectingLocation(false);
+        let msg = "";
+        if (err.code === 1) { // PERMISSION_DENIED
+          msg = "Location permission denied. You can select your incident location directly on the map below or enter an address manually.";
+        } else if (err.code === 2) { // POSITION_UNAVAILABLE
+          msg = "Device location sensor is currently unavailable. You can click on the map to pinpoint your location.";
+        } else if (err.code === 3) { // TIMEOUT
+          msg = "High-accuracy GPS request timed out. You can click 'Retry GPS' or select your location on the map.";
+        } else {
+          msg = `GPS notice (${err.message || "Unable to acquire location"}). You can pick your location on the map.`;
+        }
+        if (isUserAction) {
+          setLocationError(msg);
+        }
       },
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
     );
+  };
+
+  // Interactive Map click callback
+  const handleMapLocationSelect = async ({ latitude, longitude }) => {
+    setLocationError("");
+    let readableAddress = "";
+    try {
+      const res = await fetchApi(`/complaints/reverse-geocode?lat=${latitude}&lon=${longitude}`);
+      if (res?.address) {
+        readableAddress = res.address;
+      }
+    } catch (err) {
+      console.warn("Reverse geocode failed:", err);
+    }
+    const resolved = readableAddress || `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)}`;
+    const mapGps = {
+      latitude,
+      longitude,
+      accuracy: null,
+      capturedAt: new Date().toISOString(),
+      address: resolved,
+      source: "manual_map",
+    };
+    setCoords(mapGps);
+    setLocation(resolved);
+    setLocationSource("manual_map");
+  };
+
+  const selectDeviceGpsSource = () => {
+    if (deviceGpsSaved) {
+      setCoords(deviceGpsSaved);
+      setLocation(deviceGpsSaved.address);
+      setLocationSource("device_gps");
+    } else {
+      detectUserDeviceLocation(true);
+    }
+  };
+
+  const selectPhotoGpsSource = () => {
+    if (photoGpsAvailable) {
+      setCoords(photoGpsAvailable);
+      setLocation(photoGpsAvailable.address);
+      setLocationSource("image_exif");
+    }
   };
 
   // Voice Typing (Dictates text into the Description area)
@@ -446,12 +526,27 @@ export default function CitizenComplaintPage() {
         )
       );
 
-      if (inspectionData.has_gps && inspectionData.location_name) {
-        setLocation(inspectionData.location_name);
-        setLocationSource("IMAGE");
+      if (inspectionData.has_gps && inspectionData.latitude && inspectionData.longitude) {
+        const pGps = {
+          latitude: Number(inspectionData.latitude.toFixed(6)),
+          longitude: Number(inspectionData.longitude.toFixed(6)),
+          accuracy: null,
+          address: inspectionData.location_name || `Lat: ${inspectionData.latitude.toFixed(5)}, Lon: ${inspectionData.longitude.toFixed(5)}`,
+          filename: file.name,
+          capturedAt: inspectionData.date_time || new Date().toISOString(),
+          source: "image_exif",
+        };
+        setPhotoGpsAvailable(pGps);
+        // Do NOT overwrite user's device location if already acquired!
+        // Only if user has no coordinates yet, default to photo EXIF GPS.
+        if (!coords) {
+          setCoords(pGps);
+          setLocation(pGps.address);
+          setLocationSource("image_exif");
+        }
       } else if (deviceLocationName && !location) {
         setLocation(deviceLocationName);
-        setLocationSource("DEVICE");
+        setLocationSource("device_gps");
       }
     } catch (err) {
       console.warn("Image inspection warning:", err);
@@ -812,7 +907,23 @@ export default function CitizenComplaintPage() {
 
       if (complaintText.trim()) formData.append("complaint_text", complaintText.trim());
       if (citizenName.trim()) formData.append("citizen_name", citizenName.trim());
-      if (location.trim()) formData.append("location", location.trim());
+      if (location.trim()) {
+        formData.append("location", location.trim());
+        formData.append("address", location.trim());
+      }
+
+      // High-Accuracy Geolocation fields
+      if (coords?.latitude !== undefined && coords?.latitude !== null) {
+        formData.append("latitude", coords.latitude.toString());
+        formData.append("longitude", coords.longitude.toString());
+      }
+      if (coords?.accuracy !== undefined && coords?.accuracy !== null) {
+        formData.append("location_accuracy", coords.accuracy.toString());
+      }
+      if (coords?.capturedAt) {
+        formData.append("location_captured_at", coords.capturedAt);
+      }
+      formData.append("location_source", locationSource || "manual_text");
 
       const responseData = await fetchApi("/complaints/upload", {
         method: "POST",
@@ -1053,77 +1164,207 @@ export default function CitizenComplaintPage() {
           </div>
         )}
 
-        {/* Citizen Details & Location Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">Citizen Name (Optional)</label>
-            <input
-              type="text"
-              placeholder="e.g. Rajesh Patil"
-              value={citizenName}
-              onChange={(e) => setCitizenName(e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-            />
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1">
-                <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                <span>Location / Ward (Auto-detected)</span>
-              </label>
-
-              <button
-                type="button"
-                onClick={detectUserDeviceLocation}
-                disabled={isDetectingLocation}
-                className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold disabled:opacity-50"
-                title="Detect current device location"
-              >
-                <RefreshCw className={`w-3 h-3 ${isDetectingLocation ? "animate-spin" : ""}`} />
-                <span>{isDetectingLocation ? "Detecting..." : "Detect GPS"}</span>
-              </button>
-            </div>
-
-            <div className="relative">
+        {/* Citizen Details & Location Section */}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">Citizen Name (Optional)</label>
               <input
                 type="text"
-                placeholder="e.g. Kothrud, Ward 12, near Shani Mandir"
-                value={location}
-                onChange={(e) => {
-                  setLocation(e.target.value);
-                  setLocationSource("MANUAL");
-                }}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+                placeholder="e.g. Rajesh Patil"
+                value={citizenName}
+                onChange={(e) => setCitizenName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
-              <div className="absolute right-2.5 top-3 text-slate-400">
-                <Crosshair className="w-4 h-4 text-blue-500" />
-              </div>
             </div>
 
-            {/* Location Source / Auto-detection Status Pill */}
-            {location && (
-              <div className="mt-1 flex items-center gap-1.5 text-[11px]">
-                {locationSource === "IMAGE" ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-                    <Camera className="w-3 h-3 text-emerald-600" />
-                    Detected from Photo EXIF GPS
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Incident Address / Landmark</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => detectUserDeviceLocation(true)}
+                  disabled={isDetectingLocation}
+                  className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold disabled:opacity-50"
+                  title="Acquire fresh high-accuracy GPS coordinates"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isDetectingLocation ? "animate-spin" : ""}`} />
+                  <span>{isDetectingLocation ? "Locating..." : "Detect Fresh GPS"}</span>
+                </button>
+              </div>
+
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="e.g. Kothrud, Ward 12, near Shani Mandir"
+                  value={location}
+                  onChange={(e) => {
+                    setLocation(e.target.value);
+                    setLocationSource("manual_text");
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+                />
+                <div className="absolute right-2.5 top-3 text-slate-400">
+                  <Crosshair className="w-4 h-4 text-blue-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Location Error Notice with Retry */}
+          {locationError && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>{locationError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => detectUserDeviceLocation(true)}
+                className="px-2.5 py-1 rounded-lg bg-amber-200/70 hover:bg-amber-200 text-amber-900 font-medium shrink-0 transition-colors"
+              >
+                Retry GPS
+              </button>
+            </div>
+          )}
+
+          {/* Multiple Location Sources Disambiguation Banner (Photo EXIF vs Device GPS) */}
+          {photoGpsAvailable && (
+            <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  Multiple GPS Sources Detected — Select Incident Location:
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono">WGS84 Coordinates</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={selectDeviceGpsSource}
+                  className={`p-2.5 rounded-lg border text-left transition-all flex items-start gap-2 ${
+                    locationSource === "device_gps"
+                      ? "bg-white border-blue-600 shadow-sm ring-1 ring-blue-600"
+                      : "bg-white/70 border-slate-200 hover:bg-white"
+                  }`}
+                >
+                  <Crosshair className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <span>Device GPS (Current)</span>
+                      {deviceGpsSaved?.accuracy && (
+                        <span className="text-[10px] text-slate-500 font-normal">
+                          (±{Math.round(deviceGpsSaved.accuracy)}m)
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 line-clamp-1">
+                      {deviceGpsSaved?.address || "Current browser location"}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={selectPhotoGpsSource}
+                  className={`p-2.5 rounded-lg border text-left transition-all flex items-start gap-2 ${
+                    locationSource === "image_exif"
+                      ? "bg-white border-purple-600 shadow-sm ring-1 ring-purple-600"
+                      : "bg-white/70 border-slate-200 hover:bg-white"
+                  }`}
+                >
+                  <Camera className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <span>Photo EXIF Location</span>
+                      <span className="text-[10px] text-purple-600 font-mono">
+                        {photoGpsAvailable.filename}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 line-clamp-1">
+                      {photoGpsAvailable.address}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* High-Accuracy GPS Coordinates & Accuracy Status Bar */}
+          {coords && (
+            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100/80 border border-slate-200 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-slate-700 font-medium">
+                  {coords.latitude.toFixed(5)}° N, {coords.longitude.toFixed(5)}° E
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase ${
+                    locationSource === "image_exif"
+                      ? "bg-purple-100 text-purple-800 border border-purple-200"
+                      : locationSource === "manual_map"
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      : coords.accuracy && coords.accuracy > 50
+                      ? "bg-amber-100 text-amber-800 border border-amber-200"
+                      : "bg-blue-100 text-blue-800 border border-blue-200"
+                  }`}
+                >
+                  {locationSource === "image_exif"
+                    ? "Photo EXIF GPS"
+                    : locationSource === "manual_map"
+                    ? "Pinned on Map"
+                    : locationSource === "manual_text"
+                    ? "Manual Text"
+                    : `Device GPS (±${Math.round(coords.accuracy || 0)}m)`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {coords.accuracy !== null && coords.accuracy !== undefined && (
+                  <span
+                    className={`text-[11px] font-medium ${
+                      coords.accuracy > 50 ? "text-amber-700" : "text-emerald-700"
+                    }`}
+                  >
+                    Radius: ±{Math.round(coords.accuracy)}m
                   </span>
-                ) : locationSource === "AUDIO" ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-medium">
-                    <Music className="w-3 h-3 text-purple-600" />
-                    Detected from Voice Recording
-                  </span>
-                ) : locationSource === "DEVICE" ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 font-medium">
-                    <Crosshair className="w-3 h-3 text-blue-600" />
-                    Auto-detected from Device Location
-                  </span>
-                ) : (
-                  <span className="text-slate-400">Manually edited</span>
+                )}
+                {coords.accuracy && coords.accuracy > 50 && (
+                  <button
+                    type="button"
+                    onClick={() => detectUserDeviceLocation(true)}
+                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Retry GPS
+                  </button>
                 )}
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Interactive OpenStreetMap Pin & Accuracy Visualizer */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
+              <span className="flex items-center gap-1.5">
+                <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                <span>Interactive Incident Map (OpenStreetMap)</span>
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Click map to pinpoint or adjust location
+              </span>
+            </div>
+            <LocationPickerMap
+              latitude={coords?.latitude}
+              longitude={coords?.longitude}
+              accuracy={coords?.accuracy}
+              source={locationSource}
+              onLocationSelect={handleMapLocationSelect}
+              readOnly={false}
+              height="260px"
+            />
           </div>
         </div>
 

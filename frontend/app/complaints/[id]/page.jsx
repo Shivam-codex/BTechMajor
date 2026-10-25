@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { fetchApi, getApiBaseUrl } from "../../../utils/api";
 import { useAuth } from "../../../context/AuthContext";
+import LocationPickerMap from "../../../components/LocationPickerMap";
 
 function inferMediaCategory(fileName = "", sourceType = "", explicitCategory = "") {
   if (explicitCategory) return explicitCategory;
@@ -207,6 +208,11 @@ export default function ComplaintDetailPage() {
         ]
       : [];
 
+  const complaintLat = complaint.latitude ?? normalizedAttachments.find((a) => a.metadata?.latitude)?.metadata?.latitude;
+  const complaintLon = complaint.longitude ?? normalizedAttachments.find((a) => a.metadata?.longitude)?.metadata?.longitude;
+  const complaintAcc = complaint.location_accuracy;
+  const complaintSource = complaint.location_source ?? (complaintLat !== null && complaintLat !== undefined ? "image_exif" : null);
+
   return (
     <div className="max-w-5xl mx-auto space-y-8">
       {/* Back Button & Title */}
@@ -313,6 +319,69 @@ export default function ComplaintDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Incident Geolocation & OpenStreetMap Verification Card */}
+          {complaintLat !== null && complaintLat !== undefined && complaintLon !== null && complaintLon !== undefined && (
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-sm font-bold text-slate-900">Incident Geolocation & OpenStreetMap Verification</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase ${
+                      complaintSource?.includes("exif")
+                        ? "bg-purple-100 text-purple-800 border border-purple-200"
+                        : complaintSource?.includes("map")
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        : complaintAcc && complaintAcc > 50
+                        ? "bg-amber-100 text-amber-800 border border-amber-200"
+                        : "bg-blue-100 text-blue-800 border border-blue-200"
+                    }`}
+                  >
+                    {complaintSource?.includes("exif")
+                      ? "Photo EXIF GPS"
+                      : complaintSource?.includes("map")
+                      ? "Pinned on Map"
+                      : complaintAcc
+                      ? `Device GPS (±${Math.round(complaintAcc)}m)`
+                      : "Verified GPS"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">WGS84 Coordinates</span>
+                  <span className="font-mono text-slate-800 font-medium">
+                    {Number(complaintLat).toFixed(5)}° N, {Number(complaintLon).toFixed(5)}° E
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">Accuracy Radius</span>
+                  <span className={`font-medium ${complaintAcc && complaintAcc > 50 ? "text-amber-700" : "text-slate-800"}`}>
+                    {complaintAcc ? `±${Math.round(complaintAcc)} metres` : "Exact Pinpoint"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verified Address / Landmark</span>
+                  <span className="text-slate-800 font-medium line-clamp-1" title={complaint.address || complaint.location}>
+                    {complaint.address || complaint.location || "On-site coordinate"}
+                  </span>
+                </div>
+              </div>
+
+              <LocationPickerMap
+                latitude={Number(complaintLat)}
+                longitude={Number(complaintLon)}
+                accuracy={complaintAcc}
+                source={complaintSource}
+                readOnly={true}
+                height="240px"
+              />
+            </div>
+          )}
 
           {/* Attached Evidence & Multimodal Media Card (Supports Multiple Images, Audio, and Documents) */}
           {normalizedAttachments.length > 0 && (

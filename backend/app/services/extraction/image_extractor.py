@@ -48,26 +48,14 @@ def _dms_to_decimal(dms, ref: Optional[str]) -> Optional[float]:
         return None
 
 
-def reverse_geocode(lat: float, lon: float, timeout_sec: float = 1.5) -> str:
+def reverse_geocode(lat: float, lon: float, timeout_sec: float = 2.0) -> str:
     """
     Reverse-geocodes GPS coordinates to human-readable address using OpenStreetMap Nominatim.
-    Uses strict 1.5s timeout; falls back cleanly to coordinate string if offline or unreachable.
+    Uses cached, rate-limited reverse_geocode_coordinates service.
     """
-    try:
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "SmartCityComplaintSystem/1.0 (local-academic-project)"}
-        )
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            display_name = data.get("display_name")
-            if display_name:
-                return display_name
-    except Exception as exc:
-        logger.debug("Reverse geocoding timed out or offline: %s", exc)
-
-    return f"Lat: {lat:.5f}, Lon: {lon:.5f}"
+    from backend.app.services.geo.geocoding_service import reverse_geocode_coordinates
+    geo_res = reverse_geocode_coordinates(lat, lon, timeout_sec=timeout_sec)
+    return geo_res.get("address", f"Lat: {lat:.5f}, Lon: {lon:.5f}")
 
 
 def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:

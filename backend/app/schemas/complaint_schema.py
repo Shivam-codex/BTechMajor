@@ -23,6 +23,12 @@ class ComplaintCreate(BaseModel):
     source_file_name: Optional[str] = None
     source_file_path: Optional[str] = None
     extracted_text: Optional[str] = None
+    latitude: Optional[float] = Field(None, description="WGS84 latitude coordinate")
+    longitude: Optional[float] = Field(None, description="WGS84 longitude coordinate")
+    location_accuracy: Optional[float] = Field(None, description="GPS accuracy radius in metres")
+    location_captured_at: Optional[datetime] = Field(None, description="Timestamp when location was fixed")
+    location_source: Optional[str] = Field(None, max_length=64, description="Origin: 'device_gps', 'image_exif', 'manual_map', 'manual_text'")
+    address: Optional[str] = Field(None, max_length=512, description="Reverse-geocoded or citizen-entered readable address")
 
 
 class ComplaintUpdate(BaseModel):
@@ -54,6 +60,12 @@ class ComplaintResponse(BaseModel):
     status: str
     citizen_name: Optional[str] = None
     location: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    location_accuracy: Optional[float] = None
+    location_captured_at: Optional[datetime] = None
+    location_source: Optional[str] = None
+    address: Optional[str] = None
     resolution_notes: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

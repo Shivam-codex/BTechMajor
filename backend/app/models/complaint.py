@@ -70,6 +70,14 @@ class Complaint(Base, TimestampMixin):
     location = Column(String(255), nullable=True)
     resolution_notes = Column(Text, nullable=True)
 
+    # High-Accuracy Geolocation Fields (WGS84)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    location_accuracy = Column(Float, nullable=True)  # Reported accuracy in metres (coords.accuracy)
+    location_captured_at = Column(DateTime, nullable=True)
+    location_source = Column(String(64), nullable=True)  # 'device_gps', 'image_exif', 'manual_map', 'manual_text'
+    address = Column(String(512), nullable=True)
+
     # Optional foreign key to registered user
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     user = relationship("User", back_populates="complaints")
@@ -102,6 +110,12 @@ class Complaint(Base, TimestampMixin):
             "status": self.status,
             "citizen_name": self.citizen_name,
             "location": self.location,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "location_accuracy": self.location_accuracy,
+            "location_captured_at": self.location_captured_at.isoformat() if self.location_captured_at else None,
+            "location_source": self.location_source,
+            "address": self.address,
             "resolution_notes": self.resolution_notes,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

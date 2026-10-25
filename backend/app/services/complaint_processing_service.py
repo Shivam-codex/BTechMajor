@@ -62,6 +62,12 @@ def process_complaint_pipeline(
     visual_evidence: Optional[Dict[str, Any]] = None,
     audio_evidence: Optional[Dict[str, Any]] = None,
     citizen_text: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    location_accuracy: Optional[float] = None,
+    location_captured_at: Optional[Any] = None,
+    location_source: Optional[str] = None,
+    address: Optional[str] = None,
 ) -> Complaint:
     """
     Executes complete deterministic processing on complaint text and persists record.
@@ -69,6 +75,19 @@ def process_complaint_pipeline(
     clean_text = (complaint_text or "").strip()
     if not clean_text:
         raise ComplaintProcessingError("Complaint text cannot be empty.")
+
+    # Parse location timestamp if provided
+    parsed_captured_at = None
+    if location_captured_at:
+        from datetime import datetime
+        if isinstance(location_captured_at, datetime):
+            parsed_captured_at = location_captured_at
+        elif isinstance(location_captured_at, str):
+            try:
+                from dateutil import parser as dt_parser
+                parsed_captured_at = dt_parser.parse(location_captured_at)
+            except Exception:
+                pass
 
     # 1. Deterministic NLP Preprocessing
     nlp_result = preprocess_complaint(clean_text)
@@ -116,7 +135,13 @@ def process_complaint_pipeline(
         priority_reason=priority_res.priority_reason,
         status=initial_status,
         citizen_name=citizen_name,
-        location=location,
+        location=location or address,
+        latitude=latitude,
+        longitude=longitude,
+        location_accuracy=location_accuracy,
+        location_captured_at=parsed_captured_at,
+        location_source=location_source,
+        address=address or location,
         assigned_at=utc_now() if initial_status == ComplaintStatus.ASSIGNED.value else None,
     )
 
@@ -148,6 +173,12 @@ def process_multimodal_complaint(
     require_image: bool = True,
     audio_transcripts: Optional[Dict[str, str]] = None,
     visual_priority: Optional[str] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    location_accuracy: Optional[float] = None,
+    location_captured_at: Optional[Any] = None,
+    location_source: Optional[str] = None,
+    address: Optional[str] = None,
 ) -> Complaint:
     """
     Processes a complaint containing one or more uploaded attachments (mandatory image(s) + optional audio/documents).
@@ -265,14 +296,34 @@ def process_multimodal_complaint(
             highest_multimodal_priority = vp_cap
 
     # Location resolution:
-    # 1. Image EXIF GPS takes priority when user location is absent or generic device fallback
-    # 2. Spoken audio location is used as secondary fallback if user location is absent
+    # 1. If explicit coordinates are provided (from device GPS or manual map selection), preserve them
+    # 2. If no coordinates were supplied, check photo EXIF GPS as separate fallback source
+    # 3. Finally fall back to spoken audio or location text
+    resolved_lat = latitude
+    resolved_lon = longitude
+    resolved_acc = location_accuracy
+    resolved_time = location_captured_at
+    resolved_source = location_source
+    resolved_address = address
     resolved_location = location
-    if exif_gps_location:
+
+    if resolved_lat is not None and resolved_lon is not None:
+        if not resolved_location:
+            resolved_location = resolved_address or f"Lat: {resolved_lat:.5f}, Lon: {resolved_lon:.5f}"
+        if not resolved_source:
+            resolved_source = "device_gps"
+    elif exif_gps_location:
+        # Photo contains EXIF GPS; if citizen provided no explicit location, use as image_exif source
         if not resolved_location or not resolved_location.strip() or "device location" in resolved_location.lower():
             resolved_location = exif_gps_location
+            resolved_address = exif_gps_location
+            resolved_source = "image_exif"
+            if primary_visual_meta:
+                resolved_lat = primary_visual_meta.get("latitude")
+                resolved_lon = primary_visual_meta.get("longitude")
     elif spoken_audio_location and (not resolved_location or not resolved_location.strip()):
         resolved_location = spoken_audio_location
+        resolved_source = "spoken_audio"
 
     combined_extracted_text = "\n\n".join(extracted_sections)
 
@@ -332,6 +383,12 @@ def process_multimodal_complaint(
         visual_evidence=primary_visual_meta,
         audio_evidence=primary_audio_meta,
         citizen_text=effective_citizen_text,
+        latitude=resolved_lat,
+        longitude=resolved_lon,
+        location_accuracy=resolved_acc,
+        location_captured_at=resolved_time,
+        location_source=resolved_source,
+        address=resolved_address,
     )
 
 

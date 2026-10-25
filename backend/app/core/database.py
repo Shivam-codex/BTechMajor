@@ -58,5 +58,23 @@ def init_db():
             if cols and "attachments" not in cols:
                 conn.execute(text("ALTER TABLE complaints ADD COLUMN attachments JSON DEFAULT '[]'"))
                 conn.commit()
+            if cols and "latitude" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN latitude REAL"))
+                conn.commit()
+            if cols and "longitude" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN longitude REAL"))
+                conn.commit()
+            if cols and "location_accuracy" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN location_accuracy REAL"))
+                conn.commit()
+            if cols and "location_captured_at" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN location_captured_at TIMESTAMP"))
+                conn.commit()
+            if cols and "location_source" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN location_source VARCHAR(64)"))
+                conn.commit()
+            if cols and "address" not in cols:
+                conn.execute(text("ALTER TABLE complaints ADD COLUMN address VARCHAR(512)"))
+                conn.commit()
     except Exception:
         pass

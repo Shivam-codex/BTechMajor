@@ -41,6 +41,22 @@ from backend.app.api.deps import (
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
 
 
+@router.get(
+    "/reverse-geocode",
+    summary="Reverse geocode WGS84 coordinates to address via OpenStreetMap Nominatim",
+)
+def reverse_geocode_api(
+    lat: float = Query(..., ge=-90.0, le=90.0, description="WGS84 Latitude"),
+    lon: float = Query(..., ge=-180.0, le=180.0, description="WGS84 Longitude"),
+):
+    """
+    Reverse geocodes coordinates using OpenStreetMap Nominatim with rate-limiting,
+    in-memory caching, and zero confidential data transmission.
+    """
+    from backend.app.services.geo.geocoding_service import reverse_geocode_coordinates
+    return reverse_geocode_coordinates(lat=lat, lon=lon)
+
+
 @router.post(
     "/inspect-image",
     summary="Inspect uploaded photo for EXIF GPS location and visual hazard priority",
@@ -161,6 +177,12 @@ async def upload_complaint_document(
     complaint_text: Optional[str] = Form(None),
     citizen_name: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
+    latitude: Optional[float] = Form(None, description="WGS84 latitude coordinate"),
+    longitude: Optional[float] = Form(None, description="WGS84 longitude coordinate"),
+    location_accuracy: Optional[float] = Form(None, description="Reported GPS accuracy radius in metres"),
+    location_captured_at: Optional[str] = Form(None, description="ISO timestamp of location capture"),
+    location_source: Optional[str] = Form(None, description="Origin: device_gps, image_exif, manual_map, manual_text"),
+    address: Optional[str] = Form(None, description="Human readable address or landmark"),
     visual_priority: Optional[str] = Form(None, description="Citizen-specified or UI-confirmed visual priority level"),
     require_image: bool = Form(False, description="When true, enforces that at least one uploaded file is an image"),
     transcript: Optional[str] = Form(None, description="Optional spoken transcription for attached audio"),
@@ -242,6 +264,12 @@ async def upload_complaint_document(
             require_image=require_image or len(validated_files) > 1,
             audio_transcripts=transcripts_dict,
             visual_priority=visual_priority,
+            latitude=latitude,
+            longitude=longitude,
+            location_accuracy=location_accuracy,
+            location_captured_at=location_captured_at,
+            location_source=location_source,
+            address=address,
         )
         return complaint
     except ComplaintProcessingError as e:
@@ -286,6 +314,12 @@ def submit_complaint(
             source_file_name=payload.source_file_name,
             extracted_text=payload.extracted_text,
             user_id=current_user.id if current_user else None,
+            latitude=payload.latitude,
+            longitude=payload.longitude,
+            location_accuracy=payload.location_accuracy,
+            location_captured_at=payload.location_captured_at,
+            location_source=payload.location_source,
+            address=payload.address,
         )
         return complaint
     except ComplaintProcessingError as e:
