@@ -48,14 +48,26 @@ def _dms_to_decimal(dms, ref: Optional[str]) -> Optional[float]:
         return None
 
 
-def reverse_geocode(lat: float, lon: float, timeout_sec: float = 2.0) -> str:
+def reverse_geocode(lat: float, lon: float, timeout_sec: float = 1.5) -> str:
     """
     Reverse-geocodes GPS coordinates to human-readable address using OpenStreetMap Nominatim.
-    Uses cached, rate-limited reverse_geocode_coordinates service.
+    Uses strict 1.5s timeout; falls back cleanly to coordinate string if offline or unreachable.
     """
-    from backend.app.services.geo.geocoding_service import reverse_geocode_coordinates
-    geo_res = reverse_geocode_coordinates(lat, lon, timeout_sec=timeout_sec)
-    return geo_res.get("address", f"Lat: {lat:.5f}, Lon: {lon:.5f}")
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=18&addressdetails=1"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "SmartCityComplaintSystem/1.0 (local-academic-project)"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            display_name = data.get("display_name")
+            if display_name:
+                return display_name
+    except Exception as exc:
+        logger.debug("Reverse geocoding timed out or offline: %s", exc)
+
+    return f"Lat: {lat:.5f}, Lon: {lon:.5f}"
 
 
 def extract_exif_gps_data(file_bytes: bytes) -> Dict[str, Any]:
@@ -165,6 +177,8 @@ def query_ollama_vision(file_bytes: bytes, filename: str) -> Optional[Dict[str, 
             '  "apparent_damage": "none" | "minor" | "moderate" | "severe",\n'
             '  "severity_hint": "Critical" | "High" | "Medium" | "Low" | "Review Required",\n'
             '  "description": "Factual description of physical damage and physical obstruction visible in the image.",\n'
+            '  "descriptive_words": ["words", "describing", "the", "scene"],\n'
+            '  "priority_keywords": ["hazard", "words", "driving", "severity"],\n'
             '  "confidence": 0.85,\n'
             '  "uncertainty_indicators": ["blur", "glare", "obstruction", "ambiguous_scene"]\n'
             "}"
@@ -194,6 +208,8 @@ def query_ollama_vision(file_bytes: bytes, filename: str) -> Optional[Dict[str, 
                         "apparent_damage": str(data.get("apparent_damage", "moderate")).lower(),
                         "severity_hint": str(data.get("severity_hint", "Medium")),
                         "description": str(data.get("description", "")),
+                        "descriptive_words": list(data.get("descriptive_words", [])),
+                        "priority_keywords": list(data.get("priority_keywords", [])),
                         "confidence": float(data.get("confidence", 0.85)),
                         "uncertainty_indicators": list(data.get("uncertainty_indicators", [])),
                         "vision_source": "ollama_gemma3",
@@ -279,6 +295,9 @@ def analyze_image_local_cv(file_bytes: bytes, filename: str) -> Dict[str, Any]:
 
             hazard_ratio = hazard_color_count / float(total_px or 1)
             dark_ratio = dark_pixels / float(total_px or 1)
+            features["edge_density"] = edge_density
+            features["lum"] = lum
+            features["hazard_ratio"] = hazard_ratio
 
             # Heuristic decision tree (calibrated to prevent false HIGHs):
             # A. Critical: Active spark / fire pattern
@@ -342,16 +361,162 @@ def analyze_image_local_cv(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     return features
 
 
+CIVIC_DOMAIN_KEYWORDS: Dict[str, List[str]] = {
+    "Road/Pothole": ["pothole", "crater", "asphalt", "road", "cavity", "fracture", "uneven", "damage", "pavement", "rut"],
+    "Street Light": ["streetlight", "lamp", "pole", "dark", "night", "outage", "blackout", "unlit", "illumination", "wire"],
+    "Electricity": ["electrical", "wire", "spark", "cable", "flame", "power", "shock", "exposed", "transformer", "hazard"],
+    "Water Supply": ["water", "leak", "pipeline", "pipe", "burst", "pressure", "drinking", "supply", "flow", "spill"],
+    "Drainage/Sewerage": ["drainage", "sewage", "manhole", "overflow", "gutter", "blockage", "clogged", "foul", "sludge"],
+    "Garbage/Waste Management": ["garbage", "waste", "trash", "debris", "dump", "bin", "overflow", "refuse", "litter"],
+    "Traffic": ["traffic", "congestion", "signal", "jam", "junction", "obstruction", "vehicle", "blockage"],
+    "Public Toilet": ["toilet", "sanitation", "washroom", "hygiene", "urinal", "public"],
+    "Clean/No Damage": ["clean", "smooth", "intact", "pavement", "ordinary", "clear", "unobstructed"],
+    "Other": ["civic", "infrastructure", "field", "scene", "inspection", "location", "surface"],
+}
+
+PRIORITY_TRIGGER_KEYWORDS: Dict[str, Dict[str, List[str]]] = {
+    "Critical": {
+        "Electricity": ["active spark", "exposed wire", "fire hazard", "high voltage shock"],
+        "Road/Pothole": ["road cave-in", "deep sinkhole", "fatal hazard", "severe collapse"],
+        "default": ["immediate hazard", "active spark", "collapse risk", "life-safety threat"],
+    },
+    "High": {
+        "Road/Pothole": ["deep road crater", "severe asphalt fracture", "structural road cavity"],
+        "Street Light": ["street blackout", "total dark scene", "low illumination outage"],
+        "Electricity": ["hanging wire", "loose power cable", "sparking hazard"],
+        "Water Supply": ["burst pipeline", "severe water flooding", "high pressure pipe burst"],
+        "Drainage/Sewerage": ["open manhole on road", "overflowing sewage", "deep drainage blockage"],
+        "Garbage/Waste Management": ["massive garbage accumulation", "road blocking waste dump"],
+        "default": ["severe physical damage", "structural road damage", "acute civic obstruction"],
+    },
+    "Medium": {
+        "Road/Pothole": ["road pothole", "surface roughness", "asphalt wear"],
+        "Street Light": ["flickering street light", "lamp fixture wear"],
+        "Water Supply": ["water leakage", "dripping pipeline"],
+        "Drainage/Sewerage": ["clogged drain", "drainage blockage"],
+        "Garbage/Waste Management": ["overflowing garbage bin", "scattered trash"],
+        "default": ["standard civic defect", "moderate surface wear"],
+    },
+    "Low": {
+        "default": ["clean roadway", "intact surface", "minor texture", "routine maintenance"],
+    },
+    "Review Required": {
+        "default": ["blurred photo", "low focus", "uncertain visual scene"],
+    },
+}
+
+
+def extract_words_and_priority_keywords_from_image(
+    incident_type: str,
+    severity_hint: str,
+    apparent_damage: str,
+    visible_hazards: List[str],
+    description: str,
+    filename: str,
+    edge_density: Optional[float] = None,
+    lum: Optional[float] = None,
+    hazard_ratio: Optional[float] = None,
+    extra_keywords: Optional[List[str]] = None,
+) -> Tuple[List[str], List[str], List[str], str]:
+    """
+    Extracts descriptive words and identifies the exact priority-deciding keywords for an image.
+    Returns: (extracted_words, filtered_keywords, priority_keywords, priority_reason)
+    """
+    from backend.app.services.nlp.tokenizer import tokenize_words
+    from backend.app.services.nlp.keyword_utils import filter_stopwords, lemmatize_token
+
+    text_corpus = []
+
+    clean_fn = Path(filename).stem.replace("_", " ").replace("-", " ")
+    text_corpus.append(clean_fn)
+
+    if description:
+        text_corpus.append(description)
+
+    for h in visible_hazards:
+        text_corpus.append(str(h).replace("_", " "))
+
+    if extra_keywords:
+        text_corpus.extend(extra_keywords)
+
+    combined_raw = " ".join(text_corpus)
+    raw_tokens = tokenize_words(combined_raw)
+
+    filtered_tokens = filter_stopwords(raw_tokens)
+    seen_words = set()
+    extracted_words = []
+    for token in filtered_tokens:
+        tok_clean = lemmatize_token(token.lower().strip())
+        if tok_clean and len(tok_clean) > 2 and not tok_clean.isdigit() and tok_clean not in seen_words:
+            seen_words.add(tok_clean)
+            extracted_words.append(tok_clean)
+
+    # Fallback to incident domain terms only if very few words extracted
+    if len(extracted_words) < 2 and incident_type in CIVIC_DOMAIN_KEYWORDS:
+        for dt in CIVIC_DOMAIN_KEYWORDS[incident_type][:4]:
+            if dt not in seen_words:
+                seen_words.add(dt)
+                extracted_words.append(dt)
+
+    sev_key = severity_hint if severity_hint in PRIORITY_TRIGGER_KEYWORDS else "Medium"
+    sev_map = PRIORITY_TRIGGER_KEYWORDS.get(sev_key, {})
+    priority_keywords = sev_map.get(incident_type) or sev_map.get("default", ["civic defect"])
+
+    if visible_hazards:
+        clean_hazards = [h.replace("_", " ") for h in visible_hazards if h]
+        priority_keywords = clean_hazards + [k for k in priority_keywords if k not in clean_hazards]
+
+    seen_p = set()
+    dedup_priority_kw = []
+    for kw in priority_keywords:
+        kw_lower = kw.lower().strip()
+        if kw_lower and kw_lower not in seen_p:
+            seen_p.add(kw_lower)
+            dedup_priority_kw.append(kw)
+    priority_keywords = dedup_priority_kw[:5]
+
+    filtered_keywords = list(priority_keywords)
+    for w in extracted_words[:8]:
+        if w not in filtered_keywords:
+            filtered_keywords.append(w)
+
+    kw_str = ", ".join(f"'{k}'" for k in priority_keywords[:3])
+    if sev_key == "Critical":
+        priority_reason = f"Critical priority assigned based on visual hazard keywords: {kw_str}."
+    elif sev_key == "High":
+        metric_note = f" (edge density: {round(edge_density, 1)})" if edge_density is not None else ""
+        priority_reason = f"High priority assigned based on visual hazard keywords: {kw_str}{metric_note}."
+    elif sev_key == "Medium":
+        priority_reason = f"Medium priority assigned based on visual defect keywords: {kw_str}."
+    elif sev_key == "Low":
+        priority_reason = f"Low priority assigned as image displays an intact surface without acute structural hazards."
+    else:
+        priority_reason = f"Review Required assigned due to visual uncertainty keywords: {kw_str}."
+
+    return extracted_words, filtered_keywords, priority_keywords, priority_reason
+
+
 def analyze_image_visual_priority(file_bytes: bytes, filename: str) -> Dict[str, Any]:
     """
     Main image visual inspection handler.
     1. Attempts Ollama Gemma 3 Vision query (gemma3:4b).
     2. Falls back cleanly to local OpenCV + Pillow computer vision.
+    Extracts descriptive words and identifies the exact priority-triggering keywords.
     Returns structured visual evidence.
     """
     # 1. Try Ollama local vision model first
     ollama_result = query_ollama_vision(file_bytes, filename)
     if ollama_result is not None:
+        extra_kws = ollama_result.get("descriptive_words", []) + ollama_result.get("priority_keywords", [])
+        words, filtered_kws, priority_kws, priority_reason = extract_words_and_priority_keywords_from_image(
+            incident_type=ollama_result["incident_type"],
+            severity_hint=ollama_result["severity_hint"],
+            apparent_damage=ollama_result["apparent_damage"],
+            visible_hazards=ollama_result["visible_hazards"],
+            description=ollama_result["description"],
+            filename=filename,
+            extra_keywords=extra_kws,
+        )
         return {
             "visual_priority": ollama_result["severity_hint"],
             "category_hint": ollama_result["incident_type"],
@@ -360,12 +525,27 @@ def analyze_image_visual_priority(file_bytes: bytes, filename: str) -> Dict[str,
             "visual_summary": ollama_result["description"],
             "confidence": ollama_result["confidence"],
             "uncertainty_indicators": ollama_result["uncertainty_indicators"],
+            "extracted_words": words,
+            "filtered_keywords": filtered_kws,
+            "priority_keywords": priority_kws,
+            "priority_reason": priority_reason,
             "ocr_text": "",
             "vision_source": "ollama_gemma3",
         }
 
     # 2. Local computer vision fallback
     local_result = analyze_image_local_cv(file_bytes, filename)
+    words, filtered_kws, priority_kws, priority_reason = extract_words_and_priority_keywords_from_image(
+        incident_type=local_result["incident_type"],
+        severity_hint=local_result["severity_hint"],
+        apparent_damage=local_result["apparent_damage"],
+        visible_hazards=local_result["visible_hazards"],
+        description=local_result["description"],
+        filename=filename,
+        edge_density=local_result.get("edge_density"),
+        lum=local_result.get("lum"),
+        hazard_ratio=local_result.get("hazard_ratio"),
+    )
     return {
         "visual_priority": local_result["severity_hint"],
         "category_hint": local_result["incident_type"],
@@ -374,6 +554,10 @@ def analyze_image_visual_priority(file_bytes: bytes, filename: str) -> Dict[str,
         "visual_summary": local_result["description"],
         "confidence": local_result["confidence"],
         "uncertainty_indicators": local_result["uncertainty_indicators"],
+        "extracted_words": words,
+        "filtered_keywords": filtered_kws,
+        "priority_keywords": priority_kws,
+        "priority_reason": priority_reason,
         "ocr_text": "",
         "vision_source": "local_cv_fallback",
     }

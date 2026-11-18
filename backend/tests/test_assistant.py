@@ -29,7 +29,8 @@ def test_assistant_answers_road_pothole():
 def test_assistant_answers_water_burst_emergency():
     ans = query_municipal_assistant("What is the turnaround time for a major water pipeline burst?")
     assert ans.has_answer
-    assert any(k in ans.answer for k in ["Water", "Pipeline", "Hours", "SLA", "1800-233-0001"])
+    answer_lower = ans.answer.lower()
+    assert any(k in answer_lower for k in ["water", "pipeline", "hours", "sla", "1800-233-0001"])
     assert any("water" in s["title"].lower() or "sla" in s["title"].lower() for s in ans.sources)
     assert len(ans.retrieved_chunks) > 0
 

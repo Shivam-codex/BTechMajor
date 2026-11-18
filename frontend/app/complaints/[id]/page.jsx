@@ -33,7 +33,6 @@ import {
 } from "lucide-react";
 import { fetchApi, getApiBaseUrl } from "../../../utils/api";
 import { useAuth } from "../../../context/AuthContext";
-import LocationPickerMap from "../../../components/LocationPickerMap";
 
 function inferMediaCategory(fileName = "", sourceType = "", explicitCategory = "") {
   if (explicitCategory) return explicitCategory;
@@ -186,6 +185,7 @@ export default function ComplaintDetailPage() {
             sourceType: sType,
             mediaCategory: mCat,
             extractedText: att.extracted_text || "",
+            metadata: att.metadata || {},
             viewUrl,
             downloadUrl: dlUrl,
             isPdf: fName.toLowerCase().endsWith(".pdf") || sType === "PDF",
@@ -199,6 +199,7 @@ export default function ComplaintDetailPage() {
             sourceType: complaint.source_type || "IMAGE",
             mediaCategory: inferMediaCategory(complaint.source_file_name || "", complaint.source_type || ""),
             extractedText: complaint.extracted_text || "",
+            metadata: complaint.metadata || {},
             viewUrl: `${apiBase}/complaints/${complaint.id}/attachment?index=0`,
             downloadUrl: `${apiBase}/complaints/${complaint.id}/attachment?index=0&download=true`,
             isPdf:
@@ -207,11 +208,6 @@ export default function ComplaintDetailPage() {
           },
         ]
       : [];
-
-  const complaintLat = complaint.latitude ?? normalizedAttachments.find((a) => a.metadata?.latitude)?.metadata?.latitude;
-  const complaintLon = complaint.longitude ?? normalizedAttachments.find((a) => a.metadata?.longitude)?.metadata?.longitude;
-  const complaintAcc = complaint.location_accuracy;
-  const complaintSource = complaint.location_source ?? (complaintLat !== null && complaintLat !== undefined ? "image_exif" : null);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -320,69 +316,6 @@ export default function ComplaintDetailPage() {
             </div>
           </div>
 
-          {/* Incident Geolocation & OpenStreetMap Verification Card */}
-          {complaintLat !== null && complaintLat !== undefined && complaintLon !== null && complaintLon !== undefined && (
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-blue-600" />
-                  <h3 className="text-sm font-bold text-slate-900">Incident Geolocation & OpenStreetMap Verification</h3>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide uppercase ${
-                      complaintSource?.includes("exif")
-                        ? "bg-purple-100 text-purple-800 border border-purple-200"
-                        : complaintSource?.includes("map")
-                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                        : complaintAcc && complaintAcc > 50
-                        ? "bg-amber-100 text-amber-800 border border-amber-200"
-                        : "bg-blue-100 text-blue-800 border border-blue-200"
-                    }`}
-                  >
-                    {complaintSource?.includes("exif")
-                      ? "Photo EXIF GPS"
-                      : complaintSource?.includes("map")
-                      ? "Pinned on Map"
-                      : complaintAcc
-                      ? `Device GPS (±${Math.round(complaintAcc)}m)`
-                      : "Verified GPS"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">WGS84 Coordinates</span>
-                  <span className="font-mono text-slate-800 font-medium">
-                    {Number(complaintLat).toFixed(5)}° N, {Number(complaintLon).toFixed(5)}° E
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">Accuracy Radius</span>
-                  <span className={`font-medium ${complaintAcc && complaintAcc > 50 ? "text-amber-700" : "text-slate-800"}`}>
-                    {complaintAcc ? `±${Math.round(complaintAcc)} metres` : "Exact Pinpoint"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">Verified Address / Landmark</span>
-                  <span className="text-slate-800 font-medium line-clamp-1" title={complaint.address || complaint.location}>
-                    {complaint.address || complaint.location || "On-site coordinate"}
-                  </span>
-                </div>
-              </div>
-
-              <LocationPickerMap
-                latitude={Number(complaintLat)}
-                longitude={Number(complaintLon)}
-                accuracy={complaintAcc}
-                source={complaintSource}
-                readOnly={true}
-                height="240px"
-              />
-            </div>
-          )}
-
           {/* Attached Evidence & Multimodal Media Card (Supports Multiple Images, Audio, and Documents) */}
           {normalizedAttachments.length > 0 && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
@@ -460,6 +393,63 @@ export default function ComplaintDetailPage() {
                             </span>
                           </div>
                         </div>
+
+                        {/* Image Metadata: Priority Deciding Words & Descriptive Words */}
+                        {att.metadata && (
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 text-xs">
+                            {att.metadata.priority_keywords && att.metadata.priority_keywords.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                  Priority Deciding Words:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {att.metadata.priority_keywords.map((kw, kwIdx) => (
+                                    <span
+                                      key={kwIdx}
+                                      className="px-2 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-900 text-[10px] font-bold font-mono"
+                                    >
+                                      {kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {att.metadata.extracted_words && att.metadata.extracted_words.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                                  <Sparkles className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                                  Descriptive Image Words:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {att.metadata.extracted_words.slice(0, 10).map((w, wIdx) => (
+                                    <span
+                                      key={wIdx}
+                                      className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[10px] font-mono"
+                                    >
+                                      {w}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {att.metadata.priority_reason && (
+                              <div className="text-[11px] text-slate-600 bg-blue-50/60 p-2 rounded-lg border border-blue-100 leading-relaxed">
+                                <strong className="text-blue-900 font-semibold">Priority Rationale: </strong>
+                                <span>{att.metadata.priority_reason}</span>
+                              </div>
+                            )}
+
+                            {att.metadata.has_gps && att.metadata.location_name && (
+                              <div className="flex items-center gap-1.5 text-emerald-700 text-[11px] font-medium">
+                                <MapPin className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                                <span>EXIF GPS: {att.metadata.location_name}</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -487,6 +477,63 @@ export default function ComplaintDetailPage() {
                         </div>
 
                         <audio controls src={att.viewUrl} className="w-full mt-1" preload="metadata" />
+
+                        {/* Audio Metadata: Priority Deciding Words & Descriptive Words */}
+                        {att.metadata && (
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2 text-xs">
+                            {att.metadata.priority_keywords && att.metadata.priority_keywords.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                  Priority Deciding Words:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {att.metadata.priority_keywords.map((kw, kwIdx) => (
+                                    <span
+                                      key={kwIdx}
+                                      className="px-2 py-0.5 rounded bg-amber-50 border border-amber-300 text-amber-900 text-[10px] font-bold font-mono"
+                                    >
+                                      {kw}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {att.metadata.filtered_keywords && att.metadata.filtered_keywords.length > 0 && (
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />
+                                  Descriptive Spoken Words (NLP):
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {att.metadata.filtered_keywords.slice(0, 15).map((w, wIdx) => (
+                                    <span
+                                      key={wIdx}
+                                      className="px-2 py-0.5 rounded bg-purple-50 border border-purple-200 text-purple-800 text-[10px] font-mono font-medium"
+                                    >
+                                      {w}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {att.metadata.priority_reason && (
+                              <div className="text-[11px] text-slate-600 bg-amber-50/60 p-2 rounded-lg border border-amber-200 leading-relaxed">
+                                <strong className="text-amber-900 font-semibold">Priority Rationale: </strong>
+                                <span>{att.metadata.priority_reason}</span>
+                              </div>
+                            )}
+
+                            {att.metadata.transcription && (
+                              <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                <strong className="text-slate-800 font-semibold">Speech Transcription: </strong>
+                                <span>&ldquo;{att.metadata.transcription}&rdquo;</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 

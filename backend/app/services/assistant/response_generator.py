@@ -1,8 +1,8 @@
 """
 Conversational Municipal Assistant Response Generator.
-Generates complete, fluent, platform-grade (Flipkart/Amazon style) responses
+Generates short, plain-language answers that any citizen can understand,
 using Google GenAI SDK (gemini-2.5-flash) grounded strictly in retrieved municipal knowledge base chunks.
-Includes rich conversational local fallback if GEMINI_API_KEY is not configured or if an API call fails.
+Falls back to local Ollama (gemma3:4b) and then to concise local templates if no API is configured or a call fails.
 """
 
 import os
@@ -36,39 +36,31 @@ def format_conversational_fallback(
     # 1. Greeting Intent
     if intent == "GREETING":
         return (
-            "Hello! 👋 Welcome to the **Smart City Civic Support & Grievance Portal**.\n\n"
-            "I am your automated Municipal Assistant, ready to assist you 24/7. Here is what I can do for you:\n\n"
-            "1. **⚡ File a Grievance:** Report issues with electricity, water leaks, potholes, garbage, or street lights.\n"
-            "2. **🔍 Track Complaints:** Check live status and resolution updates for your filed complaints.\n"
-            "3. **⏱️ Check Timelines (SLAs):** Get official resolution deadlines and escalation contacts.\n"
-            "4. **📞 Emergency Help:** Instant contacts for power lines, burst pipelines, and disaster response.\n\n"
-            "*How can I assist you with municipal services today? You can select a quick action below or type your question.*"
+            "Hi! 👋 I'm the city civic assistant.\n\n"
+            "I can help you:\n"
+            "- Report a problem (power cut, water leak, pothole, garbage, street light)\n"
+            "- Track a complaint\n"
+            "- Check how long a fix takes\n\n"
+            "What do you need help with?"
         )
 
     # 2. Tracking Intent
     if intent == "TRACK_STATUS":
         if tracking_id:
             return (
-                f"I can certainly help you track **{tracking_id}**! 🔍\n\n"
-                f"According to the official **Sample Municipal Knowledge Base** (*Complaint Status and Tracking Guide*):\n\n"
-                f"- **Direct Tracking:** Click the button below to view the live status, assigned municipal engineer, and audit trail for `{tracking_id}`.\n"
-                f"- **Status Stages:** Complaints progress through `Submitted` ➔ `Classified` ➔ `Assigned` ➔ `In Progress` ➔ `Resolved`.\n"
-                f"- **Need Escalation?** If your grievance exceeds the official SLA turnaround time, you can trigger an escalation through your dashboard."
+                f"To track **{tracking_id}**, tap the **Track Complaint** button below.\n\n"
+                "Status flow: Submitted ➔ Assigned ➔ In Progress ➔ Resolved."
             )
-        else:
-            return (
-                "I'd be happy to help you track your filed complaints! 📋\n\n"
-                "According to the official **Sample Municipal Knowledge Base** (*Complaint Status and Tracking Guide*):\n\n"
-                "1. **View All Your Complaints:** Click **[Open My Complaints Tracker]** below to view all grievances filed under your account.\n"
-                "2. **Find by Tracking ID:** If you have an ID like `CMP-2026-XXXXX`, simply enter it here or on the tracking page to inspect live updates, assigned field staff, and SLA timers."
-            )
+        return (
+            "Open **My Complaints** below to see all your complaints and their live status."
+        )
 
     # 3. Out of Domain Intent (e.g., poetry, unrelated chit-chat)
     if intent == "OUT_OF_DOMAIN" or not retrieved_chunks:
         return (
             "I could not find sufficient information about this question in the "
-            "Sample Municipal Knowledge Base. Please contact the General Grievance Cell "
-            "or call the Central Municipal Helpline at 1800-233-0001 (Toll-Free, 24/7)."
+            "Sample Municipal Knowledge Base. Please call the municipal helpline at "
+            "1800-233-0001 (toll-free, 24/7)."
         )
 
     # 4. Grievance Filing & Procedural Inquiry
@@ -77,32 +69,31 @@ def format_conversational_fallback(
     top_dept = getattr(top_chunk, "department", None) or (top_chunk.get("department") if isinstance(top_chunk, dict) else (dept or "Municipal Corporation"))
     top_text = getattr(top_chunk, "text", None) or (top_chunk.get("text") if isinstance(top_chunk, dict) else "")
 
-    intro_phrase = f"I can certainly help you with your inquiry regarding **{category or 'Civic Services'}**! 🏛️\n\n"
     if intent == "LODGE_GRIEVANCE" and category:
-        intro_phrase = f"I'd be glad to help you lodge a complaint regarding **{category}** right away! 📝\n\n"
+        intro_phrase = f"Here's how to file your **{category}** complaint:"
+    else:
+        intro_phrase = f"Here's the city rule for **{category or 'civic services'}**:"
 
     body_parts = [
         intro_phrase,
-        f"According to the official **Sample Municipal Knowledge Base** (*{top_title}*, {top_dept}):\n",
-        f"{top_text}\n",
+        "",
+        str(top_text).strip(),
     ]
 
-    # Add quick steps for filing
+    # Add a short filing hint
     if intent == "LODGE_GRIEVANCE":
         body_parts.append(
-            "\n### 🚀 Quick Steps to Submit Your Grievance:\n"
-            "1. **Click the Action Button Below:** Open the **[Submit Grievance Now]** button to launch the pre-configured form.\n"
-            "2. **Provide Landmark & Details:** Specify the exact street, ward number, and description of the problem.\n"
-            "3. **Attach Photos (Optional):** Upload images or documents to assist the field inspection squad.\n"
-            "4. **Instant Tracking ID:** Upon submission, you will receive an official tracking ID (e.g. `CMP-2026-XXXXX`) to monitor progress."
+            "\nTap **Submit Grievance** below to file it. You only need the problem and the "
+            "exact location (a landmark or street works). You'll get a tracking ID."
         )
 
-    # Add emergency advisory if applicable
+    # Add a one-line emergency advisory if applicable
     if is_emergency or category == "Electricity":
         body_parts.append(
-            "\n⚠️ **Safety Advisory:** For hazardous situations (e.g. sparking transformers, fallen live wires, open manholes), "
-            "please maintain a safe 15-meter distance and dial our **24/7 Rapid Squad at 1912** or **1800-233-0001** immediately."
+            "\n⚠️ If it's a live wire, sparking, or a fallen pole: stay away and call **1912** now."
         )
+
+    body_parts.append(f"\n_Source: Sample Municipal Knowledge Base — {top_title} ({top_dept})._")
 
     return "\n".join(body_parts)
 
@@ -172,7 +163,7 @@ def generate_ollama_response(
             "stream": False,
             "options": {
                 "temperature": 0.2,
-                "num_predict": 300,
+                "num_predict": 200,
             },
         }
 
@@ -183,7 +174,7 @@ def generate_ollama_response(
                 ans_text = str(data.get("response", "")).strip()
                 if ans_text:
                     if "Sample Municipal Knowledge Base" not in ans_text:
-                        ans_text = f"According to the official **Sample Municipal Knowledge Base** (via local Gemma 3):\n\n{ans_text}"
+                        ans_text = f"{ans_text}\n\n_Source: Sample Municipal Knowledge Base._"
                     return ans_text
     except Exception as exc:
         logger.debug("Local Ollama assistant generation skipped/failed: %s", exc)
@@ -232,18 +223,22 @@ def generate_llm_response(
         history_str = "Recent Conversation History:\n" + "\n".join(lines) + "\n\n"
 
     system_instruction = (
-        "You are the Official Smart City Municipal Assistant for our urban local body, "
-        "designed like a modern customer care support bot (similar to Flipkart / Amazon customer support).\n"
-        "Your tone must be warm, professional, proactive, and exceptionally helpful.\n\n"
-        "Core Capabilities & Guidelines:\n"
-        "1. Welcome citizen queries warmly. If they want to file or raise a complaint (e.g. electricity, water, roads, garbage), "
-        "enthusiastically guide them on how to submit it right away.\n"
-        "2. State that the guidance is derived from the official Sample Municipal Knowledge Base.\n"
-        "3. Provide structured, numbered step-by-step instructions. Explain what details are needed (location, landmark, photos).\n"
-        "4. Highlight resolution timelines (SLAs), escalation channels, and responsible municipal departments whenever present in the context.\n"
-        "5. Provide safety advisories for hazardous issues (live wires, sparking transformers, gas leaks, open manholes) and mention emergency hotlines (1912 / 1800-233-0001).\n"
-        "6. If the citizen's query is in Marathi, Hindi, or mixed Devanagari script, respond courteously in that language or provide a clear bilingual response.\n"
-        "7. Format using clean Markdown (bold terms, bullet points, headers)."
+        "You are the city municipal help assistant for an urban local body.\n"
+        "Your answers must be SHORT and SIMPLE so that any citizen can understand them at a glance.\n\n"
+        "Strict rules:\n"
+        "1. Keep the whole answer to 2 to 5 short lines. Never write long essays.\n"
+        "2. Use plain everyday words. No jargon, no marketing, no self-praise.\n"
+        "3. Never mention AI, Gemini, RAG, models, or that you are an assistant.\n"
+        "4. Do not use big headers, long greetings, or many emojis. At most one small emoji.\n"
+        "5. Answer only from the provided municipal knowledge. If it is missing, say you don't have "
+        "that information and give the helpline 1800-233-0001.\n"
+        "6. If the citizen wants to file a complaint, say the 2 to 3 things needed "
+        "(the problem and the exact location/landmark) and tell them to tap the submit button.\n"
+        "7. Mention timelines or hotlines only when they are relevant to the question.\n"
+        "8. For real danger (live wire, sparking, gas leak, open manhole), add one short line: "
+        "stay away and call 1912.\n"
+        "9. Reply in the citizen's language (English, Hindi, or Marathi).\n"
+        "10. Do not add a source or attribution line; the app shows that separately."
     )
 
     user_prompt = (
@@ -252,7 +247,7 @@ def generate_llm_response(
         f"--- MUNICIPAL KNOWLEDGE BASE CONTEXT ---\n"
         f"{context_str}\n"
         f"-----------------------------------------\n\n"
-        f"Please provide an articulate, warm, comprehensive, and step-by-step response to assist the citizen."
+        f"Reply in a short, simple way (2 to 5 short lines) that any citizen can understand."
     )
 
     # 3. Tier 1: Try Google Gemini GenAI if API key is present
@@ -276,7 +271,7 @@ def generate_llm_response(
             if response and response.text:
                 ans_text = response.text.strip()
                 if "Sample Municipal Knowledge Base" not in ans_text:
-                    ans_text = f"According to the official **Sample Municipal Knowledge Base**:\n\n{ans_text}"
+                    ans_text = f"{ans_text}\n\n_Source: Sample Municipal Knowledge Base._"
                 return ans_text
         except Exception as exc:
             logger.warning(

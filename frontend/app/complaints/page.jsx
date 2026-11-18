@@ -25,7 +25,6 @@ import {
   Image as ImageIcon,
   Camera,
   MapPin,
-  Navigation,
   Crosshair,
   AlertTriangle,
   RefreshCw,
@@ -35,13 +34,18 @@ import {
 } from "lucide-react";
 import API_BASE_URL, { fetchApi } from "../../utils/api";
 import { useAuth } from "../../context/AuthContext";
-import LocationPickerMap from "../../components/LocationPickerMap";
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
 const AUDIO_EXTS = [".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".mp4"];
 const DOC_EXTS = [".pdf", ".docx", ".txt"];
 const ALL_VALID_EXTS = [...IMAGE_EXTS, ...AUDIO_EXTS, ...DOC_EXTS];
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+// Upload limitations
+const MAX_PHOTOS = 3;
+const MAX_AUDIOS = 3;
+const MAX_DOCS = 3;
+const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB per file
+const MAX_AUDIO_DURATION_SECONDS = 300; // 5 minutes (300 seconds)
 
 const PRIORITY_ORDER = {
   Critical: 5,
@@ -76,21 +80,37 @@ function formatDuration(totalSecs) {
   return `${mins}:${secs}`;
 }
 
+function getClientAudioDuration(file) {
+  return new Promise((resolve) => {
+    try {
+      const audio = new Audio();
+      audio.preload = "metadata";
+      const objectUrl = URL.createObjectURL(file);
+      audio.onloadedmetadata = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(audio.duration || null);
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(null);
+      };
+      audio.src = objectUrl;
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
 export default function CitizenComplaintPage() {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const [complaintText, setComplaintText] = useState("");
   const [citizenName, setCitizenName] = useState("");
   const [location, setLocation] = useState("");
 
-  // Location auto-detection & High Accuracy GPS states
+  // Location auto-detection states
   const [isDetectingLocation, setIsDetectingLocation] = useState(false);
   const [deviceLocationName, setDeviceLocationName] = useState("");
-  const [locationSource, setLocationSource] = useState("manual_text"); // 'device_gps' | 'image_exif' | 'manual_map' | 'manual_text'
-  const [coords, setCoords] = useState(null); // { latitude, longitude, accuracy, capturedAt, source, address }
-  const [deviceGpsSaved, setDeviceGpsSaved] = useState(null);
-  const [photoGpsAvailable, setPhotoGpsAvailable] = useState(null);
-  const [locationError, setLocationError] = useState("");
-  const [showMap, setShowMap] = useState(true);
+  const [locationSource, setLocationSource] = useState(null); // 'DEVICE' | 'IMAGE' | 'AUDIO' | 'MANUAL'
 
   // Voice Typing state (dictates text into description)
   const [isListening, setIsListening] = useState(false);
@@ -173,119 +193,45 @@ export default function CitizenComplaintPage() {
     };
   }, []);
 
-  // High-Accuracy Device Geolocation with error handling and retry
-  const detectUserDeviceLocation = (isUserAction = false) => {
-    if (typeof window === "undefined" || !navigator.geolocation) {
-      if (isUserAction) {
-        setLocationError("Geolocation is not supported by your browser.");
-      }
-      return;
-    }
+  // Device Geolocation Auto-Detection
+  const detectUserDeviceLocation = () => {
+    if (typeof window === "undefined" || !navigator.geolocation) return;
 
     setIsDetectingLocation(true);
-    setLocationError("");
-
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        const capturedAt = new Date(position.timestamp || Date.now()).toISOString();
-        const latFixed = Number(latitude.toFixed(6));
-        const lonFixed = Number(longitude.toFixed(6));
-        const accFixed = typeof accuracy === "number" && !isNaN(accuracy) ? Number(accuracy.toFixed(1)) : null;
-
-        let readableAddress = "";
+        const { latitude, longitude } = position.coords;
         try {
-          const res = await fetchApi(`/complaints/reverse-geocode?lat=${latFixed}&lon=${lonFixed}`);
-          if (res?.address) {
-            readableAddress = res.address;
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+          );
+          if (response.ok) {
+            const data = await response.json();
+            if (data?.display_name) {
+              const formatted = data.display_name;
+              setDeviceLocationName(formatted);
+              setLocation((prev) => (!prev || prev.includes("Location") || prev.includes("Lat:") ? formatted : prev));
+              setLocationSource((prev) => (prev === "IMAGE" || prev === "AUDIO" ? prev : "DEVICE"));
+              setIsDetectingLocation(false);
+              return;
+            }
           }
         } catch (err) {
-          console.warn("Reverse geocode fetch failed:", err);
+          console.warn("Reverse geocode fetch failed, using coordinates:", err);
         }
 
-        const resolved = readableAddress || `Lat: ${latFixed.toFixed(5)}, Lon: ${lonFixed.toFixed(5)}`;
-        const devGps = {
-          latitude: latFixed,
-          longitude: lonFixed,
-          accuracy: accFixed,
-          capturedAt,
-          address: resolved,
-          source: "device_gps",
-        };
-
-        setDeviceGpsSaved(devGps);
-        setDeviceLocationName(resolved);
-
-        // If user hasn't selected another source or clicked detect explicitly, set active location
-        if (!coords || locationSource === "device_gps" || isUserAction) {
-          setCoords(devGps);
-          setLocation(resolved);
-          setLocationSource("device_gps");
-        }
+        const coordStr = `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)} (Device Location)`;
+        setDeviceLocationName(coordStr);
+        setLocation((prev) => (!prev ? coordStr : prev));
+        setLocationSource((prev) => (prev === "IMAGE" || prev === "AUDIO" ? prev : "DEVICE"));
         setIsDetectingLocation(false);
       },
       (err) => {
+        console.warn("Geolocation permission denied or unavailable:", err.message);
         setIsDetectingLocation(false);
-        let msg = "";
-        if (err.code === 1) { // PERMISSION_DENIED
-          msg = "Location permission denied. You can select your incident location directly on the map below or enter an address manually.";
-        } else if (err.code === 2) { // POSITION_UNAVAILABLE
-          msg = "Device location sensor is currently unavailable. You can click on the map to pinpoint your location.";
-        } else if (err.code === 3) { // TIMEOUT
-          msg = "High-accuracy GPS request timed out. You can click 'Retry GPS' or select your location on the map.";
-        } else {
-          msg = `GPS notice (${err.message || "Unable to acquire location"}). You can pick your location on the map.`;
-        }
-        if (isUserAction) {
-          setLocationError(msg);
-        }
       },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
     );
-  };
-
-  // Interactive Map click callback
-  const handleMapLocationSelect = async ({ latitude, longitude }) => {
-    setLocationError("");
-    let readableAddress = "";
-    try {
-      const res = await fetchApi(`/complaints/reverse-geocode?lat=${latitude}&lon=${longitude}`);
-      if (res?.address) {
-        readableAddress = res.address;
-      }
-    } catch (err) {
-      console.warn("Reverse geocode failed:", err);
-    }
-    const resolved = readableAddress || `Lat: ${latitude.toFixed(5)}, Lon: ${longitude.toFixed(5)}`;
-    const mapGps = {
-      latitude,
-      longitude,
-      accuracy: null,
-      capturedAt: new Date().toISOString(),
-      address: resolved,
-      source: "manual_map",
-    };
-    setCoords(mapGps);
-    setLocation(resolved);
-    setLocationSource("manual_map");
-  };
-
-  const selectDeviceGpsSource = () => {
-    if (deviceGpsSaved) {
-      setCoords(deviceGpsSaved);
-      setLocation(deviceGpsSaved.address);
-      setLocationSource("device_gps");
-    } else {
-      detectUserDeviceLocation(true);
-    }
-  };
-
-  const selectPhotoGpsSource = () => {
-    if (photoGpsAvailable) {
-      setCoords(photoGpsAvailable);
-      setLocation(photoGpsAvailable.address);
-      setLocationSource("image_exif");
-    }
   };
 
   // Voice Typing (Dictates text into the Description area)
@@ -355,6 +301,12 @@ export default function CitizenComplaintPage() {
   const startAudioRecording = async () => {
     if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setErrorMsg("Audio recording is not supported in this browser. Please upload an audio file instead.");
+      return;
+    }
+
+    const currentAudios = supportingAttachments.filter((s) => s.kind === "audio");
+    if (currentAudios.length >= MAX_AUDIOS) {
+      setErrorMsg(`Audio limit reached: You can attach a maximum of ${MAX_AUDIOS} audio recordings/files. Remove an existing audio file to record a new one.`);
       return;
     }
 
@@ -455,7 +407,14 @@ export default function CitizenComplaintPage() {
       setRecordingSeconds(0);
 
       recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
+        setRecordingSeconds((prev) => {
+          if (prev + 1 >= MAX_AUDIO_DURATION_SECONDS) {
+            stopAudioRecording();
+            setErrorMsg("Maximum audio recording duration limit of 5 minutes (300 seconds) reached. Recording saved.");
+            return MAX_AUDIO_DURATION_SECONDS;
+          }
+          return prev + 1;
+        });
       }, 1000);
     } catch (err) {
       console.error("Microphone access error:", err);
@@ -527,27 +486,12 @@ export default function CitizenComplaintPage() {
         )
       );
 
-      if (inspectionData.has_gps && inspectionData.latitude && inspectionData.longitude) {
-        const pGps = {
-          latitude: Number(inspectionData.latitude.toFixed(6)),
-          longitude: Number(inspectionData.longitude.toFixed(6)),
-          accuracy: null,
-          address: inspectionData.location_name || `Lat: ${inspectionData.latitude.toFixed(5)}, Lon: ${inspectionData.longitude.toFixed(5)}`,
-          filename: file.name,
-          capturedAt: inspectionData.date_time || new Date().toISOString(),
-          source: "image_exif",
-        };
-        setPhotoGpsAvailable(pGps);
-        // Do NOT overwrite user's device location if already acquired!
-        // Only if user has no coordinates yet, default to photo EXIF GPS.
-        if (!coords) {
-          setCoords(pGps);
-          setLocation(pGps.address);
-          setLocationSource("image_exif");
-        }
+      if (inspectionData.has_gps && inspectionData.location_name) {
+        setLocation(inspectionData.location_name);
+        setLocationSource("IMAGE");
       } else if (deviceLocationName && !location) {
         setLocation(deviceLocationName);
-        setLocationSource("device_gps");
+        setLocationSource("DEVICE");
       }
     } catch (err) {
       console.warn("Image inspection warning:", err);
@@ -585,6 +529,7 @@ export default function CitizenComplaintPage() {
                 analysis: inspectionData,
                 customTranscript: inspectionData.transcription || customTranscript || item.customTranscript || "",
                 isAnalyzing: false,
+                analysisError: "",
               }
             : item
         )
@@ -596,12 +541,15 @@ export default function CitizenComplaintPage() {
       }
     } catch (err) {
       console.warn("Audio inspection warning:", err);
-      setErrorMsg(
-        `Could not transcribe audio '${file.name}': ${err?.message || "Unknown transcription error"}. You can still type the spoken words manually in the box below the player.`
-      );
       setSupportingAttachments((prev) =>
         prev.map((item) =>
-          item.id === attachmentId ? { ...item, isAnalyzing: false } : item
+          item.id === attachmentId
+            ? {
+                ...item,
+                isAnalyzing: false,
+                analysisError: err.message || "Could not transcribe this audio file. Please try another file or type the spoken words manually.",
+              }
+            : item
         )
       );
     }
@@ -620,7 +568,7 @@ export default function CitizenComplaintPage() {
     if (!item) return;
     const textToAnalyze = (item.customTranscript || item.analysis?.transcription || "").trim();
     setSupportingAttachments((prev) =>
-      prev.map((s) => (s.id === attachmentId ? { ...s, isAnalyzing: true } : s))
+      prev.map((s) => (s.id === attachmentId ? { ...s, isAnalyzing: true, analysisError: "" } : s))
     );
     inspectUploadedAudio(attachmentId, item.file, textToAnalyze);
   };
@@ -654,10 +602,17 @@ export default function CitizenComplaintPage() {
     }
   };
 
-  // Handler for adding one or more files
-  const handleAddFiles = (fileList, expectedCategory = "any") => {
+  // Handler for adding one or more files with strict limits:
+  // - Photos: Max 3 photos, 10 MB each
+  // - Audio: Max 3 audio files, 10 MB each, max 5 minutes duration
+  // - Documents: Max 3 documents, 10 MB each
+  const handleAddFiles = async (fileList, expectedCategory = "any") => {
     if (!fileList || fileList.length === 0) return;
     const incomingFiles = Array.from(fileList);
+
+    let projectedPhotos = imageAttachments.length;
+    let projectedAudios = supportingAttachments.filter((s) => s.kind === "audio").length;
+    let projectedDocs = supportingAttachments.filter((s) => s.kind === "document").length;
 
     for (const file of incomingFiles) {
       const ext = getFileExtension(file.name);
@@ -676,19 +631,55 @@ export default function CitizenComplaintPage() {
       }
 
       if (file.size > MAX_FILE_SIZE_BYTES) {
-        setErrorMsg(`File '${file.name}' exceeds the maximum allowed size limit of 10 MB.`);
-        continue;
-      }
-
-      if (expectedCategory === "image" && kind !== "image") {
-        addSupportingFile(file, kind);
+        setErrorMsg(
+          `File '${file.name}' exceeds the maximum allowed size limit of 10 MB (${(file.size / (1024 * 1024)).toFixed(1)} MB).`
+        );
         continue;
       }
 
       if (kind === "image") {
+        if (projectedPhotos >= MAX_PHOTOS) {
+          setErrorMsg(
+            `Photo upload limit reached: You can upload a maximum of ${MAX_PHOTOS} photos. Each photo must be 10 MB or less.`
+          );
+          continue;
+        }
+        projectedPhotos++;
         addImageFile(file);
-      } else {
-        addSupportingFile(file, kind);
+        continue;
+      }
+
+      if (kind === "audio") {
+        if (projectedAudios >= MAX_AUDIOS) {
+          setErrorMsg(
+            `Audio upload limit reached: You can upload a maximum of ${MAX_AUDIOS} audio files. Each audio file must be 10 MB or 5 minutes or less.`
+          );
+          continue;
+        }
+
+        const audioDurationSec = await getClientAudioDuration(file);
+        if (audioDurationSec !== null && audioDurationSec > MAX_AUDIO_DURATION_SECONDS) {
+          setErrorMsg(
+            `Audio file '${file.name}' exceeds the maximum duration limit of 5 minutes (${formatDuration(Math.round(audioDurationSec))}). Please upload an audio recording of 5 minutes or less.`
+          );
+          continue;
+        }
+
+        projectedAudios++;
+        addSupportingFile(file, "audio");
+        continue;
+      }
+
+      if (kind === "document") {
+        if (projectedDocs >= MAX_DOCS) {
+          setErrorMsg(
+            `Document upload limit reached: You can upload a maximum of ${MAX_DOCS} documents. Each document must be 10 MB or less.`
+          );
+          continue;
+        }
+        projectedDocs++;
+        addSupportingFile(file, "document");
+        continue;
       }
     }
   };
@@ -872,6 +863,23 @@ export default function CitizenComplaintPage() {
       return;
     }
 
+    if (imageAttachments.length > MAX_PHOTOS) {
+      setErrorMsg(`Photo limit exceeded: You may upload a maximum of ${MAX_PHOTOS} photos (${imageAttachments.length} attached). Each photo must be 10 MB or less.`);
+      return;
+    }
+
+    const currentAudios = supportingAttachments.filter((s) => s.kind === "audio");
+    if (currentAudios.length > MAX_AUDIOS) {
+      setErrorMsg(`Audio limit exceeded: You may upload a maximum of ${MAX_AUDIOS} audio files (${currentAudios.length} attached). Each audio file must be 10 MB or 5 minutes or less.`);
+      return;
+    }
+
+    const currentDocs = supportingAttachments.filter((s) => s.kind === "document");
+    if (currentDocs.length > MAX_DOCS) {
+      setErrorMsg(`Document limit exceeded: You may upload a maximum of ${MAX_DOCS} documents (${currentDocs.length} attached). Each document must be 10 MB or less.`);
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -908,23 +916,7 @@ export default function CitizenComplaintPage() {
 
       if (complaintText.trim()) formData.append("complaint_text", complaintText.trim());
       if (citizenName.trim()) formData.append("citizen_name", citizenName.trim());
-      if (location.trim()) {
-        formData.append("location", location.trim());
-        formData.append("address", location.trim());
-      }
-
-      // High-Accuracy Geolocation fields
-      if (coords?.latitude !== undefined && coords?.latitude !== null) {
-        formData.append("latitude", coords.latitude.toString());
-        formData.append("longitude", coords.longitude.toString());
-      }
-      if (coords?.accuracy !== undefined && coords?.accuracy !== null) {
-        formData.append("location_accuracy", coords.accuracy.toString());
-      }
-      if (coords?.capturedAt) {
-        formData.append("location_captured_at", coords.capturedAt);
-      }
-      formData.append("location_source", locationSource || "manual_text");
+      if (location.trim()) formData.append("location", location.trim());
 
       const responseData = await fetchApi("/complaints/upload", {
         method: "POST",
@@ -946,6 +938,10 @@ export default function CitizenComplaintPage() {
     Low: "bg-slate-100 text-slate-700 border-slate-200",
     "Review Required": "bg-purple-100 text-purple-800 border-purple-200",
   };
+
+  const currentPhotoCount = imageAttachments.length;
+  const currentAudioCount = supportingAttachments.filter((s) => s.kind === "audio").length;
+  const currentDocCount = supportingAttachments.filter((s) => s.kind === "document").length;
 
   if (authLoading) {
     return (
@@ -1165,207 +1161,77 @@ export default function CitizenComplaintPage() {
           </div>
         )}
 
-        {/* Citizen Details & Location Section */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">Citizen Name (Optional)</label>
-              <input
-                type="text"
-                placeholder="e.g. Rajesh Patil"
-                value={citizenName}
-                onChange={(e) => setCitizenName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Incident Address / Landmark</span>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => detectUserDeviceLocation(true)}
-                  disabled={isDetectingLocation}
-                  className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold disabled:opacity-50"
-                  title="Acquire fresh high-accuracy GPS coordinates"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isDetectingLocation ? "animate-spin" : ""}`} />
-                  <span>{isDetectingLocation ? "Locating..." : "Detect Fresh GPS"}</span>
-                </button>
-              </div>
-
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder="e.g. Kothrud, Ward 12, near Shani Mandir"
-                  value={location}
-                  onChange={(e) => {
-                    setLocation(e.target.value);
-                    setLocationSource("manual_text");
-                  }}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
-                />
-                <div className="absolute right-2.5 top-3 text-slate-400">
-                  <Crosshair className="w-4 h-4 text-blue-500" />
-                </div>
-              </div>
-            </div>
+        {/* Citizen Details & Location Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">Citizen Name (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Rajesh Patil"
+              value={citizenName}
+              onChange={(e) => setCitizenName(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            />
           </div>
 
-          {/* Location Error Notice with Retry */}
-          {locationError && (
-            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>{locationError}</span>
-              </div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1">
+                <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                <span>Location / Ward (Auto-detected)</span>
+              </label>
+
               <button
                 type="button"
-                onClick={() => detectUserDeviceLocation(true)}
-                className="px-2.5 py-1 rounded-lg bg-amber-200/70 hover:bg-amber-200 text-amber-900 font-medium shrink-0 transition-colors"
+                onClick={detectUserDeviceLocation}
+                disabled={isDetectingLocation}
+                className="text-[11px] text-blue-600 hover:text-blue-800 flex items-center gap-1 font-semibold disabled:opacity-50"
+                title="Detect current device location"
               >
-                Retry GPS
+                <RefreshCw className={`w-3 h-3 ${isDetectingLocation ? "animate-spin" : ""}`} />
+                <span>{isDetectingLocation ? "Detecting..." : "Detect GPS"}</span>
               </button>
             </div>
-          )}
 
-          {/* Multiple Location Sources Disambiguation Banner (Photo EXIF vs Device GPS) */}
-          {photoGpsAvailable && (
-            <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200/80 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                  Multiple GPS Sources Detected — Select Incident Location:
-                </span>
-                <span className="text-[10px] text-slate-500 font-mono">WGS84 Coordinates</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <button
-                  type="button"
-                  onClick={selectDeviceGpsSource}
-                  className={`p-2.5 rounded-lg border text-left transition-all flex items-start gap-2 ${
-                    locationSource === "device_gps"
-                      ? "bg-white border-blue-600 shadow-sm ring-1 ring-blue-600"
-                      : "bg-white/70 border-slate-200 hover:bg-white"
-                  }`}
-                >
-                  <Crosshair className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                      <span>Device GPS (Current)</span>
-                      {deviceGpsSaved?.accuracy && (
-                        <span className="text-[10px] text-slate-500 font-normal">
-                          (±{Math.round(deviceGpsSaved.accuracy)}m)
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-slate-500 line-clamp-1">
-                      {deviceGpsSaved?.address || "Current browser location"}
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={selectPhotoGpsSource}
-                  className={`p-2.5 rounded-lg border text-left transition-all flex items-start gap-2 ${
-                    locationSource === "image_exif"
-                      ? "bg-white border-purple-600 shadow-sm ring-1 ring-purple-600"
-                      : "bg-white/70 border-slate-200 hover:bg-white"
-                  }`}
-                >
-                  <Camera className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                      <span>Photo EXIF Location</span>
-                      <span className="text-[10px] text-purple-600 font-mono">
-                        {photoGpsAvailable.filename}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-500 line-clamp-1">
-                      {photoGpsAvailable.address}
-                    </div>
-                  </div>
-                </button>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="e.g. Kothrud, Ward 12, near Shani Mandir"
+                value={location}
+                onChange={(e) => {
+                  setLocation(e.target.value);
+                  setLocationSource("MANUAL");
+                }}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all pr-8"
+              />
+              <div className="absolute right-2.5 top-3 text-slate-400">
+                <Crosshair className="w-4 h-4 text-blue-500" />
               </div>
             </div>
-          )}
 
-          {/* High-Accuracy GPS Coordinates & Accuracy Status Bar */}
-          {coords && (
-            <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-100/80 border border-slate-200 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-slate-700 font-medium">
-                  {coords.latitude.toFixed(5)}° N, {coords.longitude.toFixed(5)}° E
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold tracking-wide uppercase ${
-                    locationSource === "image_exif"
-                      ? "bg-purple-100 text-purple-800 border border-purple-200"
-                      : locationSource === "manual_map"
-                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                      : coords.accuracy && coords.accuracy > 50
-                      ? "bg-amber-100 text-amber-800 border border-amber-200"
-                      : "bg-blue-100 text-blue-800 border border-blue-200"
-                  }`}
-                >
-                  {locationSource === "image_exif"
-                    ? "Photo EXIF GPS"
-                    : locationSource === "manual_map"
-                    ? "Pinned on Map"
-                    : locationSource === "manual_text"
-                    ? "Manual Text"
-                    : `Device GPS (±${Math.round(coords.accuracy || 0)}m)`}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {coords.accuracy !== null && coords.accuracy !== undefined && (
-                  <span
-                    className={`text-[11px] font-medium ${
-                      coords.accuracy > 50 ? "text-amber-700" : "text-emerald-700"
-                    }`}
-                  >
-                    Radius: ±{Math.round(coords.accuracy)}m
+            {/* Location Source / Auto-detection Status Pill */}
+            {location && (
+              <div className="mt-1 flex items-center gap-1.5 text-[11px]">
+                {locationSource === "IMAGE" ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
+                    <Camera className="w-3 h-3 text-emerald-600" />
+                    Detected from Photo EXIF GPS
                   </span>
-                )}
-                {coords.accuracy && coords.accuracy > 50 && (
-                  <button
-                    type="button"
-                    onClick={() => detectUserDeviceLocation(true)}
-                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline"
-                  >
-                    Retry GPS
-                  </button>
+                ) : locationSource === "AUDIO" ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 font-medium">
+                    <Music className="w-3 h-3 text-purple-600" />
+                    Detected from Voice Recording
+                  </span>
+                ) : locationSource === "DEVICE" ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                    <Crosshair className="w-3 h-3 text-blue-600" />
+                    Auto-detected from Device Location
+                  </span>
+                ) : (
+                  <span className="text-slate-400">Manually edited</span>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* Interactive OpenStreetMap Pin & Accuracy Visualizer */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-slate-600 font-medium">
-              <span className="flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-blue-600" />
-                <span>Interactive Incident Map (OpenStreetMap)</span>
-              </span>
-              <span className="text-[11px] text-slate-400">
-                Click map to pinpoint or adjust location
-              </span>
-            </div>
-            <LocationPickerMap
-              latitude={coords?.latitude}
-              longitude={coords?.longitude}
-              accuracy={coords?.accuracy}
-              source={locationSource}
-              onLocationSelect={handleMapLocationSelect}
-              readOnly={false}
-              height="260px"
-            />
+            )}
           </div>
         </div>
 
@@ -1389,14 +1255,20 @@ export default function CitizenComplaintPage() {
               <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 text-[10px] font-extrabold uppercase tracking-wider">
                 Mandatory *
               </span>
-              {imageAttachments.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                  {imageAttachments.length} Image{imageAttachments.length > 1 ? "s" : ""} Attached
-                </span>
-              )}
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  currentPhotoCount >= MAX_PHOTOS
+                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                    : currentPhotoCount > 0
+                    ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                    : "bg-blue-100 text-blue-800 border-blue-200"
+                }`}
+              >
+                {currentPhotoCount} / {MAX_PHOTOS} Photos Attached
+              </span>
             </div>
             <span className="text-[11px] text-slate-500">
-              Formats: JPG, JPEG, PNG, WEBP, BMP (Max 10 MB per image)
+              Max {MAX_PHOTOS} photos • Up to 10 MB each (JPG, PNG, WEBP, BMP)
             </span>
           </div>
 
@@ -1418,6 +1290,8 @@ export default function CitizenComplaintPage() {
             className={`border-2 border-dashed rounded-xl p-5 text-center transition-all ${
               imageDragActive
                 ? "border-blue-500 bg-blue-100/50"
+                : currentPhotoCount >= MAX_PHOTOS
+                ? "border-slate-200 bg-slate-50/70"
                 : imageAttachments.length > 0
                 ? "border-emerald-300 bg-white"
                 : "border-slate-300 hover:border-blue-400 bg-white"
@@ -1427,24 +1301,30 @@ export default function CitizenComplaintPage() {
               <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto shadow-sm">
                 <Camera className="w-5 h-5" />
               </div>
-              <p className="text-sm font-medium text-slate-700">
-                {imageAttachments.length > 0 ? "Add another photograph or drag & drop here, or " : "Drag & drop your grievance photograph here, or "}
-                <label className="text-blue-600 cursor-pointer font-bold hover:underline">
-                  browse images
-                  <input
-                    type="file"
-                    multiple
-                    accept=".jpg,.jpeg,.png,.webp,.bmp,image/*"
-                    onChange={(e) => {
-                      handleAddFiles(e.target.files, "image");
-                      e.target.value = "";
-                    }}
-                    className="hidden"
-                  />
-                </label>
-              </p>
+              {currentPhotoCount >= MAX_PHOTOS ? (
+                <p className="text-xs font-semibold text-slate-600">
+                  Maximum photo limit reached ({currentPhotoCount}/{MAX_PHOTOS}). Remove an image if you wish to upload a different one.
+                </p>
+              ) : (
+                <p className="text-sm font-medium text-slate-700">
+                  {imageAttachments.length > 0 ? "Add another photograph or drag & drop here, or " : "Drag & drop your grievance photograph here, or "}
+                  <label className="text-blue-600 cursor-pointer font-bold hover:underline">
+                    browse images
+                    <input
+                      type="file"
+                      multiple
+                      accept=".jpg,.jpeg,.png,.webp,.bmp,image/*"
+                      onChange={(e) => {
+                        handleAddFiles(e.target.files, "image");
+                        e.target.value = "";
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </p>
+              )}
               <p className="text-xs text-slate-400">
-                At least 1 image is mandatory. Automatically extracts EXIF GPS coordinates and visual hazard severity.
+                At least 1 image is mandatory (limit: up to 3 photos, 10 MB each). Automatically extracts EXIF GPS coordinates and visual hazard severity.
               </p>
             </div>
           </div>
@@ -1518,6 +1398,51 @@ export default function CitizenComplaintPage() {
                         </select>
                       </div>
 
+                      {imgItem.analysis.priority_keywords && imgItem.analysis.priority_keywords.length > 0 && (
+                        <div className="space-y-1 bg-amber-50/70 p-2 rounded-lg border border-amber-200">
+                          <span className="text-[10px] font-bold text-amber-900 flex items-center gap-1">
+                            <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                            Priority Deciding Words:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {imgItem.analysis.priority_keywords.map((kw, kIdx) => (
+                              <span
+                                key={kIdx}
+                                className="px-1.5 py-0.5 rounded bg-white border border-amber-300 text-amber-900 text-[10px] font-bold font-mono shadow-2xs"
+                              >
+                                {kw}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {imgItem.analysis.extracted_words && imgItem.analysis.extracted_words.length > 0 && (
+                        <div className="space-y-1 bg-white p-2 rounded-lg border border-slate-200">
+                          <span className="text-[10px] font-semibold text-slate-700 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                            Descriptive Image Words:
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {imgItem.analysis.extracted_words.slice(0, 8).map((word, wIdx) => (
+                              <span
+                                key={wIdx}
+                                className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-800 text-[10px] font-mono"
+                              >
+                                {word}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {imgItem.analysis.priority_reason && (
+                        <div className="text-[10px] text-slate-600 bg-blue-50/60 p-2 rounded-lg border border-blue-100 leading-relaxed">
+                          <strong className="text-blue-900 font-semibold">Priority Rationale: </strong>
+                          <span>{imgItem.analysis.priority_reason}</span>
+                        </div>
+                      )}
+
                       {imgItem.analysis.category_hint && imgItem.analysis.category_hint !== "Other" && (
                         <div className="text-[10px] text-slate-700 flex items-center gap-1 font-medium bg-white p-1 rounded border border-slate-200">
                           <Tag className="w-3 h-3 text-blue-600 flex-shrink-0" />
@@ -1563,14 +1488,31 @@ export default function CitizenComplaintPage() {
               <span className="px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider">
                 Optional
               </span>
-              {supportingAttachments.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 text-[10px] font-bold">
-                  {supportingAttachments.length} Supporting File{supportingAttachments.length > 1 ? "s" : ""} Added
-                </span>
-              )}
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  currentAudioCount >= MAX_AUDIOS
+                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                    : currentAudioCount > 0
+                    ? "bg-purple-100 text-purple-800 border-purple-200"
+                    : "bg-slate-100 text-slate-700 border-slate-200"
+                }`}
+              >
+                {currentAudioCount} / {MAX_AUDIOS} Audio
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  currentDocCount >= MAX_DOCS
+                    ? "bg-amber-100 text-amber-800 border-amber-300"
+                    : currentDocCount > 0
+                    ? "bg-amber-100 text-amber-900 border-amber-300"
+                    : "bg-slate-100 text-slate-700 border-slate-200"
+                }`}
+              >
+                {currentDocCount} / {MAX_DOCS} Docs
+              </span>
             </div>
             <span className="text-[11px] text-slate-500">
-              Record voice memos or attach audio (MP3, WAV, WEBM) & docs (PDF, DOCX, TXT)
+              Audio: Max {MAX_AUDIOS} (10 MB / 5 mins each) • Docs: Max {MAX_DOCS} (10 MB each)
             </span>
           </div>
 
@@ -1581,7 +1523,12 @@ export default function CitizenComplaintPage() {
               <button
                 type="button"
                 onClick={startAudioRecording}
-                className="p-4 rounded-xl border border-purple-200 bg-white hover:bg-purple-50/70 hover:border-purple-300 transition-all flex items-center gap-3 text-left group shadow-sm"
+                disabled={currentAudioCount >= MAX_AUDIOS}
+                className={`p-4 rounded-xl border transition-all flex items-center gap-3 text-left group shadow-sm ${
+                  currentAudioCount >= MAX_AUDIOS
+                    ? "bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed"
+                    : "border-purple-200 bg-white hover:bg-purple-50/70 hover:border-purple-300"
+                }`}
               >
                 <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
                   <Mic className="w-5 h-5" />
@@ -1592,11 +1539,13 @@ export default function CitizenComplaintPage() {
                       Record Voice Audio
                     </span>
                     <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-700 text-[9px] font-bold">
-                      Live Mic
+                      Max 5 mins
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Speak your complaint; NLP extracts words and urgency.
+                    {currentAudioCount >= MAX_AUDIOS
+                      ? `Audio limit reached (${currentAudioCount}/${MAX_AUDIOS})`
+                      : "Record up to 5 minutes; NLP extracts words and urgency."}
                   </p>
                 </div>
               </button>
@@ -1670,7 +1619,7 @@ export default function CitizenComplaintPage() {
                   />
                 </label>
                 <p className="text-[11px] text-slate-500 mt-0.5 truncate">
-                  Or drag & drop audio / PDF / DOCX files here
+                  Audio (max 3, 10 MB / 5 mins) • Documents (max 3, 10 MB)
                 </p>
               </div>
             </div>
@@ -1737,6 +1686,14 @@ export default function CitizenComplaintPage() {
                           <div className="w-3.5 h-3.5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
                           <span>Transcribing speech & extracting words via NLP...</span>
                         </div>
+                      ) : item.analysisError ? (
+                        <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg flex items-start gap-1.5 text-[11px] text-red-800">
+                          <AlertTriangle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold block">Audio not transcribed</span>
+                            <span>{item.analysisError}</span>
+                          </div>
+                        </div>
                       ) : item.analysis ? (
                         <div className="p-3 bg-purple-50/50 border border-purple-200/80 rounded-xl space-y-2 text-xs">
                           {/* Priority & Category Bar */}
@@ -1791,25 +1748,37 @@ export default function CitizenComplaintPage() {
                             />
                           </div>
 
-                          {/* Speech Transcription Failure / No-Speech Notice */}
-                          {item.analysis.transcription_error && (
-                            <div className="p-2 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-1.5 text-amber-800 text-[11px]">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-bold">Speech not extracted: </span>
-                                <span>{item.analysis.transcription_error}</span>
-                                <span className="block mt-0.5 text-amber-700">
-                                  Type the spoken words manually or use &ldquo;Dictate&rdquo;, then click &ldquo;Re-extract Words&rdquo;.
-                                </span>
+                          {/* Priority Deciding Words for Audio */}
+                          {item.analysis.priority_keywords && item.analysis.priority_keywords.length > 0 && (
+                            <div className="p-2 rounded-lg bg-amber-50/80 border border-amber-200 space-y-1">
+                              <div className="flex items-center gap-1.5 text-amber-900 text-[11px] font-bold">
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                <span>Priority Deciding Words:</span>
                               </div>
+                              <div className="flex flex-wrap gap-1">
+                                {item.analysis.priority_keywords.map((kw, kwIdx) => (
+                                  <span
+                                    key={kwIdx}
+                                    className="px-2 py-0.5 rounded bg-white border border-amber-300 text-amber-900 text-[10px] font-bold font-mono shadow-2xs"
+                                  >
+                                    {kw}
+                                  </span>
+                                ))}
+                              </div>
+                              {item.analysis.priority_reason && (
+                                <p className="text-[10px] text-amber-800 pt-0.5 leading-snug">
+                                  {item.analysis.priority_reason}
+                                </p>
+                              )}
                             </div>
                           )}
 
-                          {/* NLP Extracted Words & Keywords */}
+                          {/* Descriptive Spoken Words (NLP Extracted Words) */}
                           {item.analysis.filtered_keywords && item.analysis.filtered_keywords.length > 0 ? (
                             <div className="space-y-1">
-                              <span className="text-[11px] font-semibold text-slate-700 block">
-                                NLP Extracted Keywords:
+                              <span className="text-[11px] font-semibold text-slate-700 flex items-center gap-1">
+                                <Sparkles className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                                Descriptive Spoken Words (NLP Extracted):
                               </span>
                               <div className="flex flex-wrap gap-1">
                                 {item.analysis.filtered_keywords.slice(0, 15).map((word, wIdx) => (
@@ -1965,11 +1934,16 @@ export default function CitizenComplaintPage() {
                 <Camera className="w-4 h-4 text-blue-600 flex-shrink-0" />
                 <div>
                   <span className="font-semibold block">Uploaded Photo Visual Hazard:</span>
-                  <span className="text-[10px] text-slate-500">
+                  <span className="text-[10px] text-slate-500 block">
                     {imageAttachments[0]?.analysis?.predicted_priority
                       ? `${imageAttachments[0].analysis.predicted_priority} severity`
                       : "Photo attached — ready for visual inspection"}
                   </span>
+                  {imageAttachments[0]?.analysis?.priority_keywords?.length > 0 && (
+                    <span className="text-[9px] text-blue-700 font-medium block mt-0.5">
+                      Deciding words: {imageAttachments[0].analysis.priority_keywords.join(", ")}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1977,7 +1951,7 @@ export default function CitizenComplaintPage() {
                 <Music className="w-4 h-4 text-purple-600 flex-shrink-0" />
                 <div>
                   <span className="font-semibold block">Spoken Audio Words (NLP):</span>
-                  <span className="text-[10px] text-slate-500">
+                  <span className="text-[10px] text-slate-500 block">
                     {primaryAudioItem?.analysis?.predicted_priority
                       ? `${primaryAudioItem.analysis.predicted_priority} urgency (${
                           primaryAudioItem.analysis.hazard_keywords?.length
@@ -1988,6 +1962,11 @@ export default function CitizenComplaintPage() {
                       ? "Audio attached — ready for NLP word extraction"
                       : "No audio attached (optional)"}
                   </span>
+                  {primaryAudioItem?.analysis?.priority_keywords?.length > 0 && (
+                    <span className="text-[9px] text-purple-700 font-medium block mt-0.5">
+                      Deciding words: {primaryAudioItem.analysis.priority_keywords.join(", ")}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

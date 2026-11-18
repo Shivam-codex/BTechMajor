@@ -31,7 +31,16 @@ from backend.app.services.complaint_processing_service import (
     ComplaintProcessingError,
 )
 from backend.app.core.security import sanitize_text_input, validate_upload_content
-from backend.app.utils.constants import ComplaintStatus, IMAGE_EXTENSIONS, AUDIO_EXTENSIONS
+from backend.app.utils.constants import (
+    ComplaintStatus,
+    IMAGE_EXTENSIONS,
+    AUDIO_EXTENSIONS,
+    DOCUMENT_EXTENSIONS,
+    MAX_PHOTO_COUNT,
+    MAX_AUDIO_COUNT,
+    MAX_DOCUMENT_COUNT,
+    MAX_AUDIO_DURATION_SECONDS,
+)
 from backend.app.api.deps import (
     get_current_user,
     get_optional_current_user,
@@ -39,22 +48,6 @@ from backend.app.api.deps import (
 )
 
 router = APIRouter(prefix="/complaints", tags=["Complaints"])
-
-
-@router.get(
-    "/reverse-geocode",
-    summary="Reverse geocode WGS84 coordinates to address via OpenStreetMap Nominatim",
-)
-def reverse_geocode_api(
-    lat: float = Query(..., ge=-90.0, le=90.0, description="WGS84 Latitude"),
-    lon: float = Query(..., ge=-180.0, le=180.0, description="WGS84 Longitude"),
-):
-    """
-    Reverse geocodes coordinates using OpenStreetMap Nominatim with rate-limiting,
-    in-memory caching, and zero confidential data transmission.
-    """
-    from backend.app.services.geo.geocoding_service import reverse_geocode_coordinates
-    return reverse_geocode_coordinates(lat=lat, lon=lon)
 
 
 @router.post(
@@ -103,6 +96,10 @@ async def inspect_uploaded_image(
         "vision_source": visual_data.get("vision_source", "offline_heuristic"),
         "visual_summary": visual_data.get("visual_summary", ""),
         "ocr_text": visual_data.get("ocr_text", ""),
+        "extracted_words": visual_data.get("extracted_words", []),
+        "filtered_keywords": visual_data.get("filtered_keywords", []),
+        "priority_keywords": visual_data.get("priority_keywords", []),
+        "priority_reason": visual_data.get("priority_reason", ""),
     }
 
 
@@ -134,7 +131,18 @@ async def inspect_uploaded_audio(
             detail=f"Only audio files ({', '.join(sorted(AUDIO_EXTENSIONS))}) can be inspected here.",
         )
 
-    from backend.app.services.extraction.audio_extractor import extract_text_from_audio
+    from backend.app.services.extraction.audio_extractor import (
+        extract_text_from_audio,
+        get_audio_duration_seconds,
+    )
+
+    # Enforce maximum audio duration limit (5 minutes / 300 seconds)
+    audio_dur = get_audio_duration_seconds(file_bytes, filename)
+    if audio_dur is not None and audio_dur > MAX_AUDIO_DURATION_SECONDS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Audio duration exceeds maximum limit of 5 minutes ({round(audio_dur, 1)}s > {int(MAX_AUDIO_DURATION_SECONDS)}s).",
+        )
 
     success, raw_text, paragraphs, error_msg, meta = extract_text_from_audio(
         file_bytes, filename, transcript=transcript
@@ -151,13 +159,13 @@ async def inspect_uploaded_audio(
         "extracted_words": meta.get("extracted_words", []),
         "filtered_keywords": meta.get("filtered_keywords", []),
         "hazard_keywords": meta.get("hazard_keywords", []),
+        "priority_keywords": meta.get("priority_keywords", meta.get("hazard_keywords", [])),
+        "priority_reason": meta.get("priority_reason", ""),
         "predicted_priority": meta.get("audio_priority", "Medium"),
         "apparent_damage": meta.get("apparent_damage", "none"),
         "uncertainty_indicators": meta.get("uncertainty_indicators", []),
         "detected_language": meta.get("detected_language", "en"),
         "transcription_source": meta.get("transcription_source", "whisper_base"),
-        "transcription_error": meta.get("transcription_error"),
-        "speech_detected": meta.get("speech_detected", False),
         "spoken_location": meta.get("spoken_location"),
         "category_hint": meta.get("category_hint", "Other"),
         "duration_seconds": meta.get("duration_seconds"),
@@ -177,12 +185,6 @@ async def upload_complaint_document(
     complaint_text: Optional[str] = Form(None),
     citizen_name: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
-    latitude: Optional[float] = Form(None, description="WGS84 latitude coordinate"),
-    longitude: Optional[float] = Form(None, description="WGS84 longitude coordinate"),
-    location_accuracy: Optional[float] = Form(None, description="Reported GPS accuracy radius in metres"),
-    location_captured_at: Optional[str] = Form(None, description="ISO timestamp of location capture"),
-    location_source: Optional[str] = Form(None, description="Origin: device_gps, image_exif, manual_map, manual_text"),
-    address: Optional[str] = Form(None, description="Human readable address or landmark"),
     visual_priority: Optional[str] = Form(None, description="Citizen-specified or UI-confirmed visual priority level"),
     require_image: bool = Form(False, description="When true, enforces that at least one uploaded file is an image"),
     transcript: Optional[str] = Form(None, description="Optional spoken transcription for attached audio"),
@@ -207,8 +209,13 @@ async def upload_complaint_document(
             detail="Mandatory Image Upload Required: Please upload at least one image (.jpg, .jpeg, .png, .webp, .bmp) to file a complaint.",
         )
 
+    from backend.app.services.extraction.audio_extractor import get_audio_duration_seconds
+
     validated_files: List[Tuple[str, bytes]] = []
     has_image = False
+    photo_count = 0
+    audio_count = 0
+    doc_count = 0
 
     for upload_obj in upload_items:
         f_bytes = await upload_obj.read()
@@ -224,8 +231,36 @@ async def upload_complaint_document(
         ext = Path(f_name).suffix.lower()
         if ext in IMAGE_EXTENSIONS:
             has_image = True
+            photo_count += 1
+        elif ext in AUDIO_EXTENSIONS:
+            audio_count += 1
+            audio_dur = get_audio_duration_seconds(f_bytes, f_name)
+            if audio_dur is not None and audio_dur > MAX_AUDIO_DURATION_SECONDS:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Audio file '{f_name}' exceeds the maximum allowed duration of 5 minutes ({round(audio_dur, 1)}s > {int(MAX_AUDIO_DURATION_SECONDS)}s).",
+                )
+        elif ext in DOCUMENT_EXTENSIONS:
+            doc_count += 1
 
         validated_files.append((f_name, f_bytes))
+
+    # Enforce quantity limits (Max 3 photos, Max 3 audio files, Max 3 documents)
+    if photo_count > MAX_PHOTO_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Photo upload limit exceeded: You may upload a maximum of {MAX_PHOTO_COUNT} photos ({photo_count} provided).",
+        )
+    if audio_count > MAX_AUDIO_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Audio upload limit exceeded: You may upload a maximum of {MAX_AUDIO_COUNT} audio files ({audio_count} provided).",
+        )
+    if doc_count > MAX_DOCUMENT_COUNT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Document upload limit exceeded: You may upload a maximum of {MAX_DOCUMENT_COUNT} documents ({doc_count} provided).",
+        )
 
     # Enforce mandatory image upload when required by the Complaint Section or when multiple files are attached
     if (require_image or len(validated_files) > 1) and not has_image:
@@ -264,12 +299,6 @@ async def upload_complaint_document(
             require_image=require_image or len(validated_files) > 1,
             audio_transcripts=transcripts_dict,
             visual_priority=visual_priority,
-            latitude=latitude,
-            longitude=longitude,
-            location_accuracy=location_accuracy,
-            location_captured_at=location_captured_at,
-            location_source=location_source,
-            address=address,
         )
         return complaint
     except ComplaintProcessingError as e:
@@ -314,12 +343,6 @@ def submit_complaint(
             source_file_name=payload.source_file_name,
             extracted_text=payload.extracted_text,
             user_id=current_user.id if current_user else None,
-            latitude=payload.latitude,
-            longitude=payload.longitude,
-            location_accuracy=payload.location_accuracy,
-            location_captured_at=payload.location_captured_at,
-            location_source=payload.location_source,
-            address=payload.address,
         )
         return complaint
     except ComplaintProcessingError as e:

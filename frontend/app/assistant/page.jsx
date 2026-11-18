@@ -35,10 +35,10 @@ export default function AssistantPage() {
   const initialGreeting = {
     role: "assistant",
     content: 
-      "Hello! 👋 Welcome to the **Smart City Civic Support & Grievance Assistant**.\n\n" +
-      "I am your dedicated 24/7 Municipal Support Assistant (powered by **Google Gemini** & Grounded RAG). " +
-      "I can help you lodge grievances, check live resolution timelines (SLAs), and connect directly with municipal departments.\n\n" +
-      "What civic issue or municipal procedure would you like help with today?",
+      "Hi! 👋 I'm the city civic assistant.\n\n" +
+      "I can help you report a problem (power, water, roads, garbage, street light), " +
+      "track a complaint, or check how long a fix takes.\n\n" +
+      "What do you need help with?",
     sources: [],
     retrieved_chunks: [],
     confidence: 1.0,

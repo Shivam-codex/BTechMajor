@@ -80,7 +80,11 @@ CATEGORY_DEPARTMENT_MAPPING = {
 }
 
 # File Upload Configuration
-MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB per file
+MAX_PHOTO_COUNT = 3
+MAX_AUDIO_COUNT = 3
+MAX_DOCUMENT_COUNT = 3
+MAX_AUDIO_DURATION_SECONDS = 300.0  # 5 minutes (300 seconds)
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".mp4"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".txt"}

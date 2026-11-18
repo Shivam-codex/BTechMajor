@@ -23,9 +23,14 @@ from backend.app.utils.constants import (
     SourceType,
     ComplaintStatus,
     ComplaintPriority,
+    ComplaintCategory,
     IMAGE_EXTENSIONS,
     AUDIO_EXTENSIONS,
     DOCUMENT_EXTENSIONS,
+    MAX_PHOTO_COUNT,
+    MAX_AUDIO_COUNT,
+    MAX_DOCUMENT_COUNT,
+    MAX_AUDIO_DURATION_SECONDS,
 )
 from backend.app.core.logging import log_event, logger
 from backend.app.models.base import utc_now
@@ -62,12 +67,6 @@ def process_complaint_pipeline(
     visual_evidence: Optional[Dict[str, Any]] = None,
     audio_evidence: Optional[Dict[str, Any]] = None,
     citizen_text: Optional[str] = None,
-    latitude: Optional[float] = None,
-    longitude: Optional[float] = None,
-    location_accuracy: Optional[float] = None,
-    location_captured_at: Optional[Any] = None,
-    location_source: Optional[str] = None,
-    address: Optional[str] = None,
 ) -> Complaint:
     """
     Executes complete deterministic processing on complaint text and persists record.
@@ -76,24 +75,19 @@ def process_complaint_pipeline(
     if not clean_text:
         raise ComplaintProcessingError("Complaint text cannot be empty.")
 
-    # Parse location timestamp if provided
-    parsed_captured_at = None
-    if location_captured_at:
-        from datetime import datetime
-        if isinstance(location_captured_at, datetime):
-            parsed_captured_at = location_captured_at
-        elif isinstance(location_captured_at, str):
-            try:
-                from dateutil import parser as dt_parser
-                parsed_captured_at = dt_parser.parse(location_captured_at)
-            except Exception:
-                pass
-
     # 1. Deterministic NLP Preprocessing
     nlp_result = preprocess_complaint(clean_text)
 
-    # 2. Rule-Based Classification
-    classification = classify_complaint(nlp_result)
+    # 2. Rule-Based Classification: If citizen explicitly entered grievance text, evaluate it as primary intent
+    classification = None
+    if citizen_text and citizen_text.strip():
+        citizen_nlp = preprocess_complaint(citizen_text.strip())
+        citizen_class = classify_complaint(citizen_nlp)
+        if citizen_class.category != ComplaintCategory.OTHER.value and citizen_class.rule_match_score > 0.0:
+            classification = citizen_class
+
+    if classification is None:
+        classification = classify_complaint(nlp_result)
 
     # 3. Automatic Department Assignment
     department, routing_reason = assign_department(classification.category)
@@ -135,13 +129,7 @@ def process_complaint_pipeline(
         priority_reason=priority_res.priority_reason,
         status=initial_status,
         citizen_name=citizen_name,
-        location=location or address,
-        latitude=latitude,
-        longitude=longitude,
-        location_accuracy=location_accuracy,
-        location_captured_at=parsed_captured_at,
-        location_source=location_source,
-        address=address or location,
+        location=location,
         assigned_at=utc_now() if initial_status == ComplaintStatus.ASSIGNED.value else None,
     )
 
@@ -173,12 +161,6 @@ def process_multimodal_complaint(
     require_image: bool = True,
     audio_transcripts: Optional[Dict[str, str]] = None,
     visual_priority: Optional[str] = None,
-    latitude: Optional[float] = None,
-    longitude: Optional[float] = None,
-    location_accuracy: Optional[float] = None,
-    location_captured_at: Optional[Any] = None,
-    location_source: Optional[str] = None,
-    address: Optional[str] = None,
 ) -> Complaint:
     """
     Processes a complaint containing one or more uploaded attachments (mandatory image(s) + optional audio/documents).
@@ -198,6 +180,17 @@ def process_multimodal_complaint(
         raise ComplaintProcessingError(
             "Mandatory Image Upload Required: Please upload at least one image (.jpg, .jpeg, .png, .webp, .bmp) to file a complaint."
         )
+
+    photo_count = sum(1 for fname, _ in files_list if Path(sanitize_filename(fname)).suffix.lower() in IMAGE_EXTENSIONS)
+    audio_count = sum(1 for fname, _ in files_list if Path(sanitize_filename(fname)).suffix.lower() in AUDIO_EXTENSIONS)
+    doc_count = sum(1 for fname, _ in files_list if Path(sanitize_filename(fname)).suffix.lower() in DOCUMENT_EXTENSIONS)
+
+    if photo_count > MAX_PHOTO_COUNT:
+        raise ComplaintProcessingError(f"Photo upload limit exceeded: Maximum {MAX_PHOTO_COUNT} photos allowed.")
+    if audio_count > MAX_AUDIO_COUNT:
+        raise ComplaintProcessingError(f"Audio upload limit exceeded: Maximum {MAX_AUDIO_COUNT} audio files allowed.")
+    if doc_count > MAX_DOCUMENT_COUNT:
+        raise ComplaintProcessingError(f"Document upload limit exceeded: Maximum {MAX_DOCUMENT_COUNT} documents allowed.")
 
     cid = generate_complaint_id()
     try:
@@ -296,34 +289,14 @@ def process_multimodal_complaint(
             highest_multimodal_priority = vp_cap
 
     # Location resolution:
-    # 1. If explicit coordinates are provided (from device GPS or manual map selection), preserve them
-    # 2. If no coordinates were supplied, check photo EXIF GPS as separate fallback source
-    # 3. Finally fall back to spoken audio or location text
-    resolved_lat = latitude
-    resolved_lon = longitude
-    resolved_acc = location_accuracy
-    resolved_time = location_captured_at
-    resolved_source = location_source
-    resolved_address = address
+    # 1. Image EXIF GPS takes priority when user location is absent or generic device fallback
+    # 2. Spoken audio location is used as secondary fallback if user location is absent
     resolved_location = location
-
-    if resolved_lat is not None and resolved_lon is not None:
-        if not resolved_location:
-            resolved_location = resolved_address or f"Lat: {resolved_lat:.5f}, Lon: {resolved_lon:.5f}"
-        if not resolved_source:
-            resolved_source = "device_gps"
-    elif exif_gps_location:
-        # Photo contains EXIF GPS; if citizen provided no explicit location, use as image_exif source
+    if exif_gps_location:
         if not resolved_location or not resolved_location.strip() or "device location" in resolved_location.lower():
             resolved_location = exif_gps_location
-            resolved_address = exif_gps_location
-            resolved_source = "image_exif"
-            if primary_visual_meta:
-                resolved_lat = primary_visual_meta.get("latitude")
-                resolved_lon = primary_visual_meta.get("longitude")
     elif spoken_audio_location and (not resolved_location or not resolved_location.strip()):
         resolved_location = spoken_audio_location
-        resolved_source = "spoken_audio"
 
     combined_extracted_text = "\n\n".join(extracted_sections)
 
@@ -383,12 +356,6 @@ def process_multimodal_complaint(
         visual_evidence=primary_visual_meta,
         audio_evidence=primary_audio_meta,
         citizen_text=effective_citizen_text,
-        latitude=resolved_lat,
-        longitude=resolved_lon,
-        location_accuracy=resolved_acc,
-        location_captured_at=resolved_time,
-        location_source=resolved_source,
-        address=resolved_address,
     )
 
 

@@ -33,6 +33,10 @@ class Settings(BaseSettings):
 
     # File Upload limits
     MAX_FILE_SIZE_MB: int = 10
+    MAX_PHOTO_COUNT: int = 3
+    MAX_AUDIO_COUNT: int = 3
+    MAX_DOC_COUNT: int = 3
+    MAX_AUDIO_DURATION_SECONDS: float = 300.0  # 5 minutes
 
     # Assistant/Retrieval parameters
     RETRIEVAL_TOP_K: int = 4
@@ -55,7 +59,7 @@ class Settings(BaseSettings):
     # Authentication & JWT Security
     SECRET_KEY: str = "smart-city-super-secret-jwt-key-2026-academic-project"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 43200  # 30 days (avoids session expiring after 2-3 days)
 
     model_config = SettingsConfigDict(
         case_sensitive=True,
